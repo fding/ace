@@ -16,6 +16,33 @@ struct state {
     char flags;
 };
 
+struct position_count {
+    uint64_t hash;
+    char valid;
+    char count;
+};
+
+// Used for draw detection
+struct position_count position_count_table[256];
+
+static void position_count_table_update(uint64_t hash) {
+    int hash1 = hash & 0xff;
+    if (position_count_table[hash1].valid && position_count_table[hash1].hash == hash) {
+        position_count_table[hash1].count++;
+    } else {
+        position_count_table[hash1].valid = 1;
+        position_count_table[hash1].hash = hash;
+        position_count_table[hash1].count = 1;
+    }
+}
+
+static int position_count_table_read(uint64_t hash) {
+    int hash1 = hash & 0xff;
+    if (position_count_table[hash1].valid && position_count_table[hash1].hash == hash)
+        return position_count_table[hash1].count;
+    return 0;
+}
+
 struct state global_state;
 
 struct transposition* transposition_table;
@@ -73,10 +100,7 @@ void load_opening_table(char * fname) {
 
 void save_opening_table(char * fname) {
     FILE * file = fopen(fname, "w");
-    printf("Saving opening table...\n");
-    if (file == NULL) {
-        printf("No\n");
-    }
+    fprintf(stderr, "Saving opening table...\n");
     fwrite(opening_table, sizeof(struct opening_entry), 65536, file);
     fclose(file);
 }
@@ -127,7 +151,7 @@ void engine_init(int depth, char flags) {
     global_state.side = 0;
     global_state.current_side = 0;
     global_state.won = 0;
-    global_state.depth = depth;
+    global_state.depth = depth + 1;
     global_state.flags = flags;
 
     // Seed the random number generator
@@ -210,6 +234,13 @@ static int engine_move_internal(move_t move) {
     else
         return -1;
 
+    position_count_table_update(global_state.curboard.hash);
+    if (position_count_table_read(global_state.curboard.hash) >= 4) {
+        // Draw
+        global_state.won = 1;
+        return 0;
+    }
+
     global_state.all_moves[global_state.curboard.nmoves - 1] = move;
     global_state.current_side = 1-global_state.current_side;
 
@@ -232,7 +263,9 @@ int engine_play() {
     move_t move = generate_move(&global_state.curboard, global_state.current_side, &global_state.depth, global_state.flags);
     char buffer[8];
     move_to_algebraic(&global_state.curboard, buffer, &move);
-    printf("Spent %lu milliseconds for move %s\n", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
+    printf("%s\n", buffer);
+    fflush(stdout);
+    fprintf(stderr, "Spent %lu milliseconds for move %s\n", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
     return engine_move_internal(move);
 }
 
@@ -247,47 +280,47 @@ void engine_print() {
     struct board* board = &global_state.curboard;
     char piece;
 
-    printf("%llu transpositions stored\n", transposition_table_size);
-    printf("Search Depth: %d\n", global_state.depth);
+    fprintf(stderr, "%llu transpositions stored\n", transposition_table_size);
+    fprintf(stderr, "Search Depth: %d\n", global_state.depth);
     if (global_state.current_side == 0) {
-        printf("White to move!\n");
+        fprintf(stderr, "White to move!\n");
     } else {
-        printf("Black to move!\n");
+        fprintf(stderr, "Black to move!\n");
     }
-    printf("Enpassant: %llx\n", board->enpassant);
+    fprintf(stderr, "Enpassant: %llx\n", board->enpassant);
     uint64_t mask;
     for (int i = 7; i >= 0; i--) {
         for (int j = 0; j < 8; j++) {
             mask = 1ull << (8 * i + j);
             if (mask & P2BM(board, WHITEPAWN))
-                printf(" P ");
+                fprintf(stderr, " P ");
             else if (mask & P2BM(board, WHITEKNIGHT))
-                printf(" N ");
+                fprintf(stderr, " N ");
             else if (mask & P2BM(board, WHITEBISHOP))
-                printf(" B ");
+                fprintf(stderr, " B ");
             else if (mask & P2BM(board, WHITEROOK))
-                printf(" R ");
+                fprintf(stderr, " R ");
             else if (mask & P2BM(board, WHITEQUEEN))
-                printf(" Q ");
+                fprintf(stderr, " Q ");
             else if (mask & P2BM(board, WHITEKING))
-                printf(" K ");
+                fprintf(stderr, " K ");
             else if (mask & P2BM(board, BLACKPAWN))
-                printf(" p ");
+                fprintf(stderr, " p ");
             else if (mask & P2BM(board, BLACKKNIGHT))
-                printf(" n ");
+                fprintf(stderr, " n ");
             else if (mask & P2BM(board, BLACKBISHOP))
-                printf(" b ");
+                fprintf(stderr, " b ");
             else if (mask & P2BM(board, BLACKROOK))
-                printf(" r ");
+                fprintf(stderr, " r ");
             else if (mask & P2BM(board, BLACKQUEEN))
-                printf(" q ");
+                fprintf(stderr, " q ");
             else if (mask & P2BM(board, BLACKKING))
-                printf(" k ");
+                fprintf(stderr, " k ");
             else
-                printf(" . ");
+                fprintf(stderr, " . ");
         }
-        printf("\n\n");
+        fprintf(stderr, "\n\n");
     }
-    printf("Hash: %llx\n", board->hash);
+    fprintf(stderr, "Hash: %llx\n", board->hash);
 }
 

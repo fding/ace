@@ -23,3 +23,6 @@ perft: perft.c libace.a
 
 benchmark: benchmark.c libace.a
 	$(CC) $(CFLAGS) benchmark.c -lace -o benchmark
+
+playself: playself.c libace.a
+	$(CC) $(CFLAGS) playself.c -lace -o playself

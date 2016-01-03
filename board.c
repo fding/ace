@@ -297,6 +297,7 @@ void move_to_algebraic(struct board* board, char* buffer, struct delta* move) {
     int rank2 = move->square2 / 8;
     int file1 = move->square1 % 8;
     int file2 = move->square2 % 8;
+    /*
     switch (move->piece) {
         case PAWN:
             buffer[0] = 'P';
@@ -317,11 +318,44 @@ void move_to_algebraic(struct board* board, char* buffer, struct delta* move) {
             buffer[0] = 'K';
             break;
     }
-    buffer[1] = 'a' + file1;
-    buffer[2] = '1' + rank1;
-    buffer[3] = 'a' + file2;
-    buffer[4] = '1' + rank2;
-    buffer[5] = 0;
+    */
+    buffer[0] = 'a' + file1;
+    buffer[1] = '1' + rank1;
+    buffer[2] = 'a' + file2;
+    buffer[3] = '1' + rank2;
+    buffer[4] = 0;
+    if (move->misc & 0x80) {
+        buffer[4] = 'C';
+        if (file2 == 2)
+            buffer[5] = 'a';
+        else
+            buffer[5] = 'h';
+        buffer[6] = '1' + rank2;
+        buffer[7] = 0;
+    }
+    if (move->promotion != move->piece) {
+        switch (move->promotion) {
+            case PAWN:
+                buffer[4] = 'P';
+                break;
+            case KNIGHT:
+                buffer[4] = 'N';
+                break;
+            case BISHOP:
+                buffer[4] = 'B';
+                break;
+            case ROOK:
+                buffer[4] = 'R';
+                break;
+            case QUEEN:
+                buffer[4] = 'Q';
+                break;
+            case KING:
+                buffer[4] = 'K';
+                break;
+        }
+        buffer[5] = 0;
+    }
 }
 
 void moveset_push(struct moveset* moveset, struct moveset_piece* move) {
@@ -407,7 +441,6 @@ int moveset_to_deltaset(struct board* board, struct moveset* mvs, struct deltase
                         out->moves[i].captured = QUEEN;
                     // En-passant
                     else if (mvs->moves[j].piece == PAWN && (square - mvs->moves[j].square) % 8 != 0 && board->enpassant != 1) {
-                        assert((LSBINDEX(board->enpassant) -square)% 8 == 0 );
                         out->moves[i].captured = PAWN;
                     }
 
@@ -416,7 +449,6 @@ int moveset_to_deltaset(struct board* board, struct moveset* mvs, struct deltase
             }
         }
     }
-    assert(i == out->nmoves);
     return 0;
 }
 
@@ -427,10 +459,10 @@ void moveset_print(struct board* board, struct moveset* mvs) {
     moveset_to_deltaset(board, mvs, &ds);
     for (i = 0; i < ds.nmoves; i++) {
         move_to_algebraic(board, buffer, &ds.moves[i]);
-        printf("%s ", buffer);
+        fprintf(stderr, "%s ", buffer);
     }
     free(ds.moves);
-    printf("\n");
+    fprintf(stderr, "\n");
 }
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -990,10 +1022,7 @@ int reverse_move(struct board* board, char who, move_t* move) {
     if (move->captured != -1) {
         if (move->misc & 0x40) {
             // En passant
-            if (who)
-                P2BM(board, 6 * (1-who) + move->captured) ^= (mask2 << 8);
-            else
-                P2BM(board, 6 * (1-who) + move->captured) ^= (mask2 >> 8);
+            P2BM(board, 6 * (1-who) + move->captured) ^= board->enpassant;
         }
         else
             P2BM(board, 6*(1-who) + move->captured) ^= mask2;

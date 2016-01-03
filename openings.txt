@@ -14,7 +14,7 @@
 
 # Two Knights Defense
 3 e2e4 e7e5 g1f3 b8c6 f1c4 g8f6
-# Fried Liver ATtack
+# Fried Liver Attack
 4 e2e4 e7e5 g1f3 b8c6 f1c4 g8f6 f3g5 d7e5 e4d5 f6d5 g5f7 e8f7 d1f3 f7e6 b1c3 c6b4
 
 # French defence
@@ -47,8 +47,13 @@
 3 e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 g7g6 c1e3 f8g7 f2f3 e8g8Ch8 d1d2 b8c6 f1c4 c8d7 e1c1Ca1 a8c8 c4b3 c6e5 h2h4 e5c4 b3c4 c8c4 h4h5
 3 e2e4 c7c5 g1f3 d7d6 d2d4 c5d4 f3d4 g8f6 b1c3 g7g6 c1e3 f8g7 f2f3 e8g8Ch8 d1d2 b8c6 f1c4 c8d7 e1c1Ca1 a8c8 c4b3 c6e5 h2h4 h7h5
 
+# Anti-Sicilians
+3 e2e4 c7c5 g1f3 d7d6 f1b5 c8d7 b5d7 d8d7 c2c4 b8c6 b1c3 e1g1Ch1 g7g6 d2d4 c5d4 f3d4 f8g7 d4e2 d7e6
+3 e2e4 c7c5 g1f3 b8c6 f1b5 g7g6
+
 # Closed Sicilian
-# e2e4 c7c5
+3 e2e4 c7c5 b1c3 b8c6 g1f3
+3 e2e4 c7c5 b1c3 b8c6 g2g3 g7g6 f1g2 f8g7 d2d3 d7d6
 
 # Caro-Kann
 # Classical (aka Capablanca)

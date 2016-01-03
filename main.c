@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
                 else if (strcmp(optarg, "engine") == 0)
                     whitecomp = 1;
                 else {
-                    printf ("option --white should be human or computer");
+                    fprintf(stderr, "option --white should be human or computer");
                     abort();
                 }
                 break;
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
                 else if (strcmp(optarg, "engine") == 0)
                     blackcomp = 1;
                 else {
-                    printf ("option --white should be human or computer");
+                    fprintf (stderr, "option --white should be human or computer");
                     abort();
                 }
                 break;
@@ -87,46 +87,64 @@ int main(int argc, char* argv[]) {
     }
 
     char buffer[8];
+    fprintf(stderr, "Running ACE, with ");
+    if (whitecomp) fprintf(stderr, "white player as computer and ");
+    else fprintf(stderr, "white player as human and ");
+    if (blackcomp) fprintf(stderr, " black player as computer. \n");
+    else fprintf(stderr, " black player as human. \n");
+
     engine_init_from_position(position, depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
     while (!engine_won()) {
-        printf("\n\n");
+        fprintf(stderr, "\n\n");
         engine_print();
+        fflush(stderr);
         if (whitecomp)
             engine_play();
         else {
             while (1) {
-                scanf("%s", buffer);
+                if (scanf("%s", buffer) < 1) {
+                    fprintf(stderr, "EOF");
+                    abort();
+                }
                 if (!engine_move(buffer)) {
                     break;
                 }
-                printf("Invalid move!\n");
+                fprintf(stderr, "Invalid move!\n");
             }
         }
         if (engine_won())  {
             break;
         }
-        printf("\n\n");
+        fprintf(stderr, "\n\n");
         engine_print();
+        fflush(stderr);
 
         if (blackcomp)
             engine_play();
         else {
             while (1) {
-                scanf("%s", buffer);
+                if (scanf("%s", buffer) < 1) {
+                    fprintf(stderr, "EOF");
+                    abort();
+                }
                 if (!engine_move(buffer)) {
                     break;
                 }
-                printf("Invalid move!\n");
+                fprintf(stderr, "Invalid move!\n");
             }
         }
     }
 
     engine_print();
+    fflush(stderr);
     if (engine_won() == 2) {
-        printf("White won\n");
+        fprintf(stderr, "White won\n");
+        return 2;
     } else if (engine_won() == 3) {
-        printf("Black won\n");
+        fprintf(stderr, "Black won\n");
+        return 1;
     } else {
-        printf("Draw\n");
+        fprintf(stderr, "Draw\n");
+        return 0;
     }
 }

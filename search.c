@@ -86,7 +86,7 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         else if (!capturemode && extension == 0) {
             capturemode = 1;
             extension += 1;
-            depth += 4;
+            depth += 2;
         } else {
             return score;
         }
@@ -254,30 +254,27 @@ move_t generate_move(struct board* board, char who, int* depth, char flags) {
             opening_table_read(board->hash, &best) == 0
             ) {
         used_table = 1;
-        printf("Applying opening...\n");
+        fprintf(stderr, "Applying opening...\n");
         apply_move(board, who, &best);
         score = alpha_beta_search(board, &temp, 4, alpha, beta,
             0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, 1 - who);
         reverse_move(board, who, &best);
     } else {
-        printf("depth: %d\n", *depth);
         score = alpha_beta_search(board, &best, *depth, alpha, beta,
             0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, who);
     }
 
     clock_t end = clock();
     if (!used_table && (flags & FLAGS_DYNAMIC_DEPTH)) {
-          if (end - start < CLOCKS_PER_SEC) *depth += 1;
-          if (end - start < CLOCKS_PER_SEC * 2) *depth += 1;
+        if (end - start < CLOCKS_PER_SEC / 6) *depth += 1;
         if (end - start > CLOCKS_PER_SEC * 20) *depth -= 1;
         if (end - start > CLOCKS_PER_SEC * 40) *depth -= 1;
         if (*depth <= 5) *depth = 5;
-        if (*depth >= 7) *depth = 7;
     }
 
     char buffer[8];
     move_to_algebraic(board, buffer, &best);
-    printf("Best scoring move is %s: %.2f, %lu\n", buffer, score/100.0, (end-start)*1000/CLOCKS_PER_SEC);
-    printf("Searched %d moves, #alpha: %d, #beta: %d, shorts: %d\n", branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count);
+    fprintf(stderr, "Best scoring move is %s: %.2f, %lu\n", buffer, score/100.0, (end-start)*1000/CLOCKS_PER_SEC);
+    fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d\n", branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count);
     return best;
 }
