@@ -122,7 +122,6 @@ void engine_init(int depth, char flags) {
         exit(1);
     if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
         exit(1);
-
     if (flags & FLAGS_USE_OPENING_TABLE)
         load_opening_table("openings.acebase");
     global_state.side = 0;
@@ -133,19 +132,25 @@ void engine_init(int depth, char flags) {
 
     // Seed the random number generator
     int i;
-    for (i = 0; i < time(NULL) % 4096; i++) rand64();
+    for (i = 0; i < time(NULL) % 4096; i++)
+        rand64();
 }
 
 
-void engine_init_from_position(char* position, int depth) {
+void engine_init_from_position(char* position, int depth, char flags) {
     initialize_lookup_tables();
     board_init_from_fen(&global_state.curboard, position);
     global_state.current_side = global_state.curboard.who;
     if (!(transposition_table = calloc(16777216, sizeof(struct transposition))))
         exit(1);
+    if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
+        exit(1);
+    if (flags & FLAGS_USE_OPENING_TABLE)
+        load_opening_table("openings.acebase");
     global_state.side = 0;
     global_state.won = 0;
     global_state.depth = depth;
+    global_state.flags = flags;
 }
 
 int engine_score() {
@@ -223,6 +228,7 @@ static int engine_move_internal(move_t move) {
 int engine_play() {
     if (global_state.won) return global_state.won;
     clock_t start = clock();
+
     move_t move = generate_move(&global_state.curboard, global_state.current_side, &global_state.depth, global_state.flags);
     char buffer[8];
     move_to_algebraic(&global_state.curboard, buffer, &move);

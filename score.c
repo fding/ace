@@ -23,7 +23,7 @@ char* positions[] = {
 int main(int argc, char* argv[]) {
     int position_i = atoi(argv[1]);
     char buffer[8];
-    engine_init_from_position(positions[position_i], 0);
+    engine_init_from_position(positions[position_i], 0, 0);
     int score = engine_score();
     engine_print();
     printf("Score: %d\n", score);

@@ -8,7 +8,7 @@
 
 /* Engine functions */
 void engine_init(int depth, char flags);
-void engine_init_from_position(char* position, int depth);
+void engine_init_from_position(char* position, int depth, char flags);
 int engine_play();
 int engine_move(char* move);
 struct board* engine_get_board();

@@ -112,14 +112,6 @@ void moveset_print(struct board* board, struct moveset* mvs);
 
 int moveset_to_deltaset(struct board* board, struct moveset* mvs, struct deltaset* out);
 
-/* Engine functions */
-void engine_init(int depth, char flags);
-void engine_init_from_position(char* position, int depth);
-int engine_play();
-int engine_move(char* move);
-struct board* engine_get_board();
-void engine_print();
-char engine_get_who();
 
 /* Board functions */
 void board_init(struct board* board);

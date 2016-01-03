@@ -56,13 +56,13 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
     move_t temp;
     mvs.nmoves = 0;
     mvs.npieces = 0;
-    int score;
-    int i;
+    int score = 0;
+    int i = 0;
     branches += 1;
     char buffer[8];
 
     char type = ALPHA_CUTOFF;
-    int nmoves;
+    int nmoves = 0;
     if (mvs.nmoves == 0)
         nmoves = board_nmoves_accurate(board, who);
 
@@ -72,7 +72,7 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         if (who) score = -score;
         if (nmoves == 0 || nullmode) return score;
 
-        if (extension >= 3)
+        if (extension >= 4)
             return score;
         // If either us or opponent has few moves,
         // it is cheaper to search deeper, and there is a mating chance
@@ -92,7 +92,7 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         }
     }
 
-    int initial_score;
+    int initial_score = 0;
     if (capturemode) {
         score = board_score(board, who, &mvs, nmoves);
         if (who) score = -score;
@@ -108,6 +108,8 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
     if (transposition_table_read(board->hash, &stored) == 0) {
         if (stored.depth >= depth) {
             if (stored.type & EXACT) {
+                assert(stored.type & MOVESTORED);
+                *best = *(move_t *) (&stored.move);
                 return stored.score;
             }
             if ((stored.type & ALPHA_CUTOFF) &&
@@ -149,9 +151,8 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
     // then our move must have been great
     // Currently buggy (probably en passant), and not sure the time savings
     // require tuning
-    uint64_t old_enpassant;
     if (depth > 4 && nullmode == 0 && !capturemode) {
-        old_enpassant = board->enpassant;
+        uint64_t old_enpassant = board->enpassant;
         board->enpassant = 1;
         board_flip_side(board);
         score = -alpha_beta_search(board, &temp, depth - 3, -beta, -alpha,
@@ -189,7 +190,7 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
                 alpha = value;
             }
         } else if (depth <= 2 && !mvs.check && alpha > -CHECKMATE/2 &&
-                beta < CHECKMATE/2 && nmoves >= 1 &&
+                beta < CHECKMATE/2 && nmoves > 5 &&
                 out.moves[i].captured == -1 &&
                 out.moves[i].promotion != out.moves[i].piece) {
             // Futility pruning
@@ -220,17 +221,15 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         }
     }
     free(out.moves);
-    if (capturemode) return alpha;
+    if (capturemode || nullmode) return alpha;
 CLEANUP:
-    if (!nullmode) {
-        transposition.hash = board->hash;
-        transposition.score = alpha;
-        transposition.depth = depth;
-        transposition.type = type;
-        transposition.age = board->nmoves;
-        memcpy(&move, &transposition.move, 8);
-        transposition_table_update(&transposition);
-    }
+    transposition.hash = board->hash;
+    transposition.score = alpha;
+    transposition.depth = depth;
+    transposition.type = type;
+    transposition.age = board->nmoves;
+    memcpy(&move, &transposition.move, 8);
+    transposition_table_update(&transposition);
     return alpha;
 }
 
@@ -261,17 +260,19 @@ move_t generate_move(struct board* board, char who, int* depth, char flags) {
             0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, 1 - who);
         reverse_move(board, who, &best);
     } else {
+        printf("depth: %d\n", *depth);
         score = alpha_beta_search(board, &best, *depth, alpha, beta,
             0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, who);
     }
 
     clock_t end = clock();
     if (!used_table && (flags & FLAGS_DYNAMIC_DEPTH)) {
-    //    if (end - start < CLOCKS_PER_SEC) *depth += 1;
-     //   if (end - start < CLOCKS_PER_SEC * 2) *depth += 1;
+          if (end - start < CLOCKS_PER_SEC) *depth += 1;
+          if (end - start < CLOCKS_PER_SEC * 2) *depth += 1;
         if (end - start > CLOCKS_PER_SEC * 20) *depth -= 1;
         if (end - start > CLOCKS_PER_SEC * 40) *depth -= 1;
         if (*depth <= 5) *depth = 5;
+        if (*depth >= 7) *depth = 7;
     }
 
     char buffer[8];

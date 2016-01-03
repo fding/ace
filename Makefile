@@ -7,7 +7,7 @@ libace.a: board.c engine.c search.c
 	$(CC) -o board.o -c board.c
 	$(CC) -o engine.o -c engine.c
 	$(CC) -o search.o -c search.c
-	ar rcs libace.a board.o engine.o search.o
+	ar rc libace.a board.o engine.o search.o
 
 score: libace.a score.c
 	$(CC) $(CFLAGS) score.c -lace -o score

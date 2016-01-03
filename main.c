@@ -22,10 +22,12 @@ static struct option long_options[] = {
     {"white",  required_argument, 0, 'w'},
     {"black",  required_argument, 0, 'b'},
     {"depth",  required_argument, 0, 'd'},
+    {"starting",  required_argument, 0, 's'},
     {0, 0, 0, 0}
 };
 
 int main(int argc, char* argv[]) {
+    char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     int c;
     int whitecomp, blackcomp;
     int depth = 6;
@@ -73,6 +75,9 @@ int main(int argc, char* argv[]) {
             case 'd':
                 depth = atoi(optarg);
                 break;
+            case 's':
+                strcpy(position, optarg);
+                break;
             case '?':
                 break;
   
@@ -82,8 +87,9 @@ int main(int argc, char* argv[]) {
     }
 
     char buffer[8];
-    engine_init(depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    engine_init_from_position(position, depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
     while (!engine_won()) {
+        printf("\n\n");
         engine_print();
         if (whitecomp)
             engine_play();
@@ -99,6 +105,7 @@ int main(int argc, char* argv[]) {
         if (engine_won())  {
             break;
         }
+        printf("\n\n");
         engine_print();
 
         if (blackcomp)
