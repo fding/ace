@@ -64,10 +64,10 @@ char* positions[] = {
      *     4     3894594
      *     5   164075551
      */
-    "1K1Q4/8/2n5/8/8/8/8/7k w - - 0 1",
+    "r1bk2nr/p2p1pNp/n2B1Q2/1p1NP2P/6P1/3P4/P1P1K3/q5b1 b - - 0 22",
     /* Position 6. Correct answers
      * Depth       Nodes
-     *     1           4
+     *     1           1
      */
 };
 
@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
     check = 0;
     castles = 0;
     promotions = 0;
-    engine_perft(depth, 0, &count, &enpassants, &captures, &check, &promotions, &castles);
+    engine_perft(depth, engine_get_who(), &count, &enpassants, &captures, &check, &promotions, &castles);
     clock_t end = clock();
     printf("Perft: %llu nodes in %.2f s (%.2f moves/sec)\n"
             "%llu captures, %llu enpassants, %llu checks, %llu promotions, %llu castles\n",

@@ -1306,6 +1306,7 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
 // is_in_check = if current side is in check, nmoves = number of moves
 
 // All tables are from white's perspective
+// We give a bonus for all pieces the closer they move to the opposite side
 int pawn_table[64] = {
     800, 800, 800, 800, 800, 800, 800, 800,
     100, 100, 100, 100, 100, 100, 100, 100, 
@@ -1318,9 +1319,9 @@ int pawn_table[64] = {
 };
 
 int knight_table[64] = {
-    -50, -40, -30, -30, -30, -30, -40, -50,
-    -40, -10, -10, -10, -10, -10, -10, -40,
-    -30, -10,  25,  30,  25,  25, -10, -30,
+    -30, -20, -10, -10, -10, -10, -20, -30,
+     20,  20,  30,  30,  30,  30,  20,  20,
+     20,  30,  35,  35,  35,  35,  30,  20,
     -30, -10,  25,  30,  30,  25, -10, -30,
     -30, -10,  25,  30,  30,  25, -10, -30,
     -30, -10,  35,  25,  25,  35, -10, -30,
@@ -1330,14 +1331,14 @@ int knight_table[64] = {
 };
 
 int bishop_table[64] = {
-    -30, -30, -30, -30, -30, -30, -30, -30,
-    -30,  10,  0,  0,  0,  0,  10, -30,
-    -30,  0,  20,  10,  10,  20,  0, -30,
+    -20, -20, -20, -20, -20, -20, -20, -20,
+      0,  20, 30,  30,  30,  30,  10,   0,
+     30,  30,  30,  30,  30,  30,  0,  30,
     -30,  0,  10,  20,  20,  10,  0, -30,
     -30,  0,  10,  20,  20,  10,  0, -30,
     -30,  0,  20,  10,  10,  10,  0, -30,
     -30,  10,  0,  0,  0,  0,  10, -30,
-    -30, -30, -30, -30, -30, -30, -30, -30,
+    -40, -40, -40, -40, -40, -40, -40, -40,
 };
 
 int rook_table[64] = {
@@ -1348,15 +1349,15 @@ int rook_table[64] = {
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 10, 10, 10, 10, 0, 0,
 };
 
 int queen_table[64] = {
     70, 70, 70, 70, 70, 70, 70, 70,
     60, 60, 60, 60, 60, 60, 60, 60,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
+    40, 40, 40, 50, 50, 40, 40, 40,
+    0, 0, 20, 30, 30, 20, 0, 0,
+    0, 0, 20, 30, 30, 20, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
@@ -1632,7 +1633,7 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
             score += 30;
 
         if ((1ull << square) & whiteundefended)
-            score -= 250;
+            score -= 320;
     }
     bmloop(P2BM(board, BLACKROOK), square, temp) {
         file = square & 0x7;
@@ -1648,7 +1649,7 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
             score -= 30;
 
         if ((1ull << square) & blackundefended)
-            score += 250;
+            score += 320;
     }
     bmloop(P2BM(board, WHITEQUEEN), square, temp) {
         file = square & 0x7;
@@ -1664,7 +1665,7 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
             score += 30;
 
         if ((1ull << square) & whiteundefended)
-            score -= 500;
+            score -= 620;
     }
     bmloop(P2BM(board, BLACKQUEEN), square, temp) {
         blackmaterial += 880;
@@ -1678,7 +1679,7 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
             score -= 30;
 
         if ((1ull << square) & blackundefended)
-            score += 500;
+            score += 620;
     }
 
     score += (whitematerial - blackmaterial);
@@ -1710,7 +1711,6 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
     if (file != 7)
         mask |= (AFILE << (file + 1));
 
-
     // open files are bad news for the king
     if (!((AFILE << file) & white_pawns))
         score -= 15;
@@ -1728,6 +1728,17 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
         score -= 30;
     if ((mask >> 48) & black_pawns)
         score -= 50;
+
+    uint64_t king_movements;
+    king_movements = white_king | attack_set_king(square, white, black);
+    count = bitmap_count_ones(king_movements & (~blackattack));
+    if (who == 1 && mvs->check) {
+        if (count <= 4) score -= (4 - count) * 60;
+        if (count == 0) score -= 100;
+        score -= 20;
+    } else if (count <= 2 && (king_movements & (~blackattack))) {
+        score -= (3 - count) *30;
+    } else if (count == 0) score -= 20;
 
     square = LSBINDEX(black_king);
     file = square & 0x7;
@@ -1756,6 +1767,18 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
         score += 30;
     if ((mask << 48) & white_pawns)
         score += 50;
+
+    king_movements = black_king | attack_set_king(square, black, white);
+    count = bitmap_count_ones(king_movements & (~whiteattack));
+    if (who == -1 && mvs->check) {
+        if (count <= 4) score += (4 - count) * 60;
+        if (count == 0) score += 100;
+        score += 20;
+    } else if (count <= 2 && (king_movements & (~whiteattack))) {
+        score += (3 - count) *30;
+    } else if (count == 0) score += 20;
+
+
     // the side with more options is better
     score += (bitmap_count_ones(whiteattack) - bitmap_count_ones(blackattack)) * 8;
 

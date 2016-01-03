@@ -82,7 +82,7 @@ int main(int argc, char* argv[]) {
     }
 
     char buffer[8];
-    engine_init(depth, FLAGS_DYNAMIC_DEPTH);
+    engine_init(depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
     while (!engine_won()) {
         engine_print();
         if (whitecomp)

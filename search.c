@@ -11,6 +11,8 @@ int beta_cutoff_count = 0;
 int short_circuit_count = 0;
 int branches = 0;
 
+int material_table[5] = {100, 510, 325, 333, 880};
+
 void sort_deltaset(struct board* board, char who, struct deltaset* set) {
     // We sort deltaset to consider checks and captures first
     int i, j, k;
@@ -70,11 +72,11 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         if (who) score = -score;
         if (nmoves == 0 || nullmode) return score;
 
-        if (extension >= 2)
+        if (extension >= 3)
             return score;
         // If either us or opponent has few moves,
         // it is cheaper to search deeper, and there is a mating chance
-        else if (extension < 2 && (nmoves < 6 || mvs.check)) {
+        else if (nmoves < 6 || mvs.check) {
             extension += 1;
             capturemode = 0;
             depth += 2;
@@ -84,18 +86,23 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         else if (!capturemode && extension == 0) {
             capturemode = 1;
             extension += 1;
-            depth += 2;
+            depth += 4;
         } else {
             return score;
         }
     }
 
+    int initial_score;
     if (capturemode) {
         score = board_score(board, who, &mvs, nmoves);
         if (who) score = -score;
         if (score >= beta) return score;
+        initial_score = score;
         if (score > alpha)
             alpha = score;
+    } else if (depth == 1) {
+        initial_score = board_score(board, who, &mvs, nmoves);
+        if (who) initial_score = -initial_score;
     }
 
     if (transposition_table_read(board->hash, &stored) == 0) {
@@ -158,8 +165,44 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
     sort_deltaset(board, who, &out);
 
     for (i = 0; i < out.nmoves; i++) {
-        if (capturemode && out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece) {
-            break;
+        int value = 0;
+        int delta_cutoff = 230;
+        // Delta-pruning for quiescent search
+        if (capturemode) {
+            if (out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece) {
+                break;
+            }
+            if (out.moves[i].captured != -1)
+                value = initial_score + material_table[out.moves[i].captured];
+            else {
+                if (out.moves[i].promotion != QUEEN) break;
+                value = initial_score + 900;
+            }
+            if (value >= beta) {
+                alpha = value;
+                break;
+            }
+            if (value + delta_cutoff < alpha) {
+                break;
+            }
+            if (alpha < value) {
+                alpha = value;
+            }
+        } else if (depth <= 2 && !mvs.check && alpha > -CHECKMATE/2 &&
+                beta < CHECKMATE/2 && nmoves >= 1 &&
+                out.moves[i].captured == -1 &&
+                out.moves[i].promotion != out.moves[i].piece) {
+            // Futility pruning
+            delta_cutoff = 300;
+            if (depth == 1) delta_cutoff = 520;
+            apply_move(board, who, &out.moves[i]);
+            if (!is_in_check(board, 1-who, board_friendly_occupancy(board, 1-who), board_enemy_occupancy(board, 1-who))) {
+                if (initial_score + delta_cutoff < alpha) {
+                    reverse_move(board, who, &out.moves[i]);
+                    break;
+                }
+            }
+            reverse_move(board, who, &out.moves[i]);
         }
         apply_move(board, who, &out.moves[i]);
         score = -alpha_beta_search(board, &temp, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
@@ -203,20 +246,32 @@ move_t generate_move(struct board* board, char who, int* depth, char flags) {
     beta_cutoff_count = 0;
     short_circuit_count = 0;
 
-    move_t best;
+    move_t best, temp;
     branches = 0;
     alpha = -INFINITY;
     beta = INFINITY;
-    score = -alpha_beta_search(board, &best, *depth, alpha, beta,
-        0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, who);
+    int used_table = 0;
+    if ((flags & FLAGS_USE_OPENING_TABLE) &&
+            opening_table_read(board->hash, &best) == 0
+            ) {
+        used_table = 1;
+        printf("Applying opening...\n");
+        apply_move(board, who, &best);
+        score = alpha_beta_search(board, &temp, 4, alpha, beta,
+            0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, 1 - who);
+        reverse_move(board, who, &best);
+    } else {
+        score = alpha_beta_search(board, &best, *depth, alpha, beta,
+            0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, who);
+    }
 
     clock_t end = clock();
-    if (flags & FLAGS_DYNAMIC_DEPTH) {
-        if (end - start < CLOCKS_PER_SEC) *depth += 1;
-        if (end - start < CLOCKS_PER_SEC * 2) *depth += 1;
+    if (!used_table && (flags & FLAGS_DYNAMIC_DEPTH)) {
+    //    if (end - start < CLOCKS_PER_SEC) *depth += 1;
+     //   if (end - start < CLOCKS_PER_SEC * 2) *depth += 1;
         if (end - start > CLOCKS_PER_SEC * 20) *depth -= 1;
         if (end - start > CLOCKS_PER_SEC * 40) *depth -= 1;
-        if (*depth <= 3) *depth = 3;
+        if (*depth <= 5) *depth = 5;
     }
 
     char buffer[8];

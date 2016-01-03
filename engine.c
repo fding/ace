@@ -33,18 +33,27 @@ void opening_table_update(uint64_t hash, move_t move, char avoid) {
         opening_table[hash1].avoid = 0;
     }
 
+    int i = 0;
     if (opening_table[hash1].hash == hash) {
         if (opening_table[hash1].nvar < 3) {
+            for (i = 0; i < opening_table[hash1].nvar; i++) {
+                struct delta_compressed entry = opening_table[hash1].move[i];
+                if (entry.square1 == m.square1 && entry.square2 == m.square2
+                        && entry.piece == m.piece && entry.captured == m.captured
+                        && entry.promotion == m.promotion)
+                    return;
+            }
             opening_table[hash1].move[opening_table[hash1].nvar] = m;
             opening_table[hash1].avoid |= (avoid << opening_table[hash1].nvar++);
         }
     }
 }
 
-int read_opening_table(uint64_t hash, move_t* move) {
+int opening_table_read(uint64_t hash, move_t* move) {
     int hash1 = ((1ull << 16) - 1) & hash;
     int index;
     if (opening_table[hash1].valid && opening_table[hash1].hash == hash) {
+        if (opening_table[hash1].nvar == 0) return -1;
         while (1) {
             index = rand64() % opening_table[hash1].nvar;
             if (!(opening_table[hash1].avoid & (1 << index))) {
@@ -58,13 +67,17 @@ int read_opening_table(uint64_t hash, move_t* move) {
 
 void load_opening_table(char * fname) {
     FILE * file = fopen(fname, "r");
-    fread(opening_table, sizeof(opening_table), 1, file);
+    fread(opening_table, sizeof(struct opening_entry), 65536, file);
     fclose(file);
 }
 
 void save_opening_table(char * fname) {
     FILE * file = fopen(fname, "w");
-    fwrite(opening_table, sizeof(opening_table), 1, file);
+    printf("Saving opening table...\n");
+    if (file == NULL) {
+        printf("No\n");
+    }
+    fwrite(opening_table, sizeof(struct opening_entry), 65536, file);
     fclose(file);
 }
 
@@ -85,7 +98,6 @@ void transposition_table_update(struct transposition * update) {
             if (transposition_table[hash1].depth < update->depth
                     || transposition_table[hash1].age > update->age + 10)
                 transposition_table[hash1] = *update;
-
         }
     }
     else
@@ -108,25 +120,30 @@ void engine_init(int depth, char flags) {
     board_init(&global_state.curboard);
     if (!(transposition_table = calloc(16777216, sizeof(struct transposition))))
         exit(1);
-    /*
     if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
         exit(1);
-        */
+
+    if (flags & FLAGS_USE_OPENING_TABLE)
+        load_opening_table("openings.acebase");
     global_state.side = 0;
     global_state.current_side = 0;
     global_state.won = 0;
     global_state.depth = depth;
     global_state.flags = flags;
+
+    // Seed the random number generator
+    int i;
+    for (i = 0; i < time(NULL) % 4096; i++) rand64();
 }
 
 
 void engine_init_from_position(char* position, int depth) {
     initialize_lookup_tables();
     board_init_from_fen(&global_state.curboard, position);
+    global_state.current_side = global_state.curboard.who;
     if (!(transposition_table = calloc(16777216, sizeof(struct transposition))))
         exit(1);
     global_state.side = 0;
-    global_state.current_side = 0;
     global_state.won = 0;
     global_state.depth = depth;
 }
