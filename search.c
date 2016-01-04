@@ -20,6 +20,7 @@ int material_table[5] = {100, 510, 325, 333, 880};
 move_t killer[32];
 uint64_t seen[32];
 int ply;
+int allow_short = 0;
 
 struct absearchparams {
     int capturemode;
@@ -110,21 +111,21 @@ int transposition_table_search(struct board* board, struct deltaset* out, int de
     move_t move;
     move_t temp;
     int s;
-    if (transposition_table_read(board->hash, &stored) == 0) {
+    if (transposition_table_read(board->hash, &stored) == 0 && stored.age < board->nmoves - 2) {
         if (stored.depth >= depth) {
-            if (stored.type & EXACT) {
+            if ((stored.type & EXACT) && allow_short) {
                 assert(stored.type & MOVESTORED);
                 *best = *(move_t *) (&stored.move);
                 *alpha = stored.score;
                 return 0;
             } 
             if ((stored.type & ALPHA_CUTOFF) &&
-                    stored.score <= *alpha) {
+                    stored.score <= *alpha && allow_short) {
                 *alpha = stored.score;
                 return 0;
             }
             if ((stored.type & BETA_CUTOFF) &&
-                    stored.score >= beta) {
+                    stored.score >= beta && allow_short) {
                 *alpha = stored.score;
                 return 0;
             }
@@ -333,6 +334,7 @@ move_t generate_move(struct board* board, char who, int maxt, char flags) {
     alpha_cutoff_count = 0;
     beta_cutoff_count = 0;
     short_circuit_count = 0;
+    allow_short = 0;
 
     ply = 0;
 
@@ -363,9 +365,7 @@ move_t generate_move(struct board* board, char who, int maxt, char flags) {
             else {
                 score = s;
                 temp = best;
-    char buffer[8];
-    move_to_algebraic(board, buffer, &best);
-    printf("%s: %d, %d\n", buffer, d, s);
+                allow_short = 1;
                 if (s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
                     break;
                 }

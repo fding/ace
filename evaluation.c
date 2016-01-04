@@ -543,10 +543,18 @@ int board_score_endgame(struct board* board, char who, struct moveset* mvs, int 
             int dr, df;
             dr = rank;
             df = file;
-            if (rank >= 5) dr = 7-dr;
-            if (file >= 5) df = 7-df;
-            if (dr < df) mask = AFILE << file;
-            else mask = RANK1 << (8*rank);
+            if (rank >= 4) dr = 7-dr;
+            if (file >= 4) df = 7-df;
+                mask = AFILE << file;
+                if (df == file)
+                    mask |= AFILE << (file+1);
+                else
+                    mask |= AFILE << (file-1);
+                mask |= RANK1 << (8*rank);
+                if (dr == rank)
+                    mask |= RANK1 << (8*rank+8);
+                else
+                    mask |= RANK1 << (8*rank-8);
             if (black_major & mask) score -= 100;
 
         }
@@ -560,8 +568,16 @@ int board_score_endgame(struct board* board, char who, struct moveset* mvs, int 
             df = file;
             if (rank >= 4) dr = 7-dr;
             if (file >= 4) df = 7-df;
-            if (dr < df) mask = AFILE << file;
-            else mask = RANK1 << (8*rank);
+                mask = AFILE << file;
+                if (df == file)
+                    mask |= AFILE << (file+1);
+                else
+                    mask |= AFILE << (file-1);
+                mask |= RANK1 << (8*rank);
+                if (dr == rank)
+                    mask |= RANK1 << (8*rank+8);
+                else
+                    mask |= RANK1 << (8*rank-8);
             if (white_major & mask) score += 100;
         }
         score += (7 - dist(wkingsquare, bkingsquare)) * 30;

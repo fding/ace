@@ -193,7 +193,6 @@ void engine_perft(int depth, int who, uint64_t* count, uint64_t* enpassants, uin
     moveset_to_deltaset(&global_state.curboard, &mvs, &out);
     if (depth == 0 && mvs.check) *check += 1;
     for (i = 0; i < out.nmoves; i++) {
-        move_to_algebraic(&global_state.curboard, buffer, &out.moves[i]);
         apply_move(&global_state.curboard, who, &out.moves[i]);
         local_count += 1;
         if (out.moves[i].captured != -1) {

@@ -4,6 +4,7 @@
 #include <string.h>
 #include <assert.h>
 #include "pieces.h"
+#include "magic.h"
 
 uint64_t square_hash_codes[64][12];
 uint64_t castling_hash_codes[4];
@@ -509,8 +510,33 @@ uint64_t king_move_table[64] = {
 
 uint64_t ray_table[8][64] = {0};
 
+struct magic bishop_magics[64];
+struct magic rook_magics[64];
 
+
+static uint64_t attack_set_rook_nonmagic(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
+static uint64_t attack_set_bishop_nonmagic(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
+
+uint64_t attack_set_bishop(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
+    uint64_t index = friendly_occupancy | enemy_occupancy;
+    index &= bishop_magics[square].mask;
+    index *= bishop_magics[square].magic;
+    index >>= bishop_magics[square].shift;
+    return bishop_magics[square].table[index] & (~friendly_occupancy);
+}
+
+uint64_t attack_set_rook(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
+    uint64_t index = friendly_occupancy | enemy_occupancy;
+    index &= rook_magics[square].mask;
+    index *= rook_magics[square].magic;
+    index >>= rook_magics[square].shift;
+    return rook_magics[square].table[index] & (~friendly_occupancy);
+}
+
+#define BOUNDARY 0xff818181818181ffull
+#define INTERIOR (~BOUNDARY)
 void initialize_lookup_tables() {
+    initialize_magics();
     int i, j, k, l;
     for (i = 0; i < 8; i++) {
         for (j = 0; j < 8; j++) {
@@ -533,6 +559,31 @@ void initialize_lookup_tables() {
                 ray_table[SOUTHWEST][i * 8 + j] |= (1ull << (k * 8 + l));
         }
     }
+
+    for (i = 0; i < 64; i++) {
+        uint64_t attacks = attack_set_rook_nonmagic(i, 0, 0) & rook_magics[i].mask;
+        uint64_t current = 0;
+        uint64_t temp = 0;
+        while (1) {
+            rook_magics[i].table[(current * rook_magics[i].magic) >> rook_magics[i].shift] = attack_set_rook_nonmagic(i, 0, current);
+            if (current == attacks) break;
+            temp = ~(LSB(attacks ^ current) - 1);
+            current = (temp & current) ^ LSB(temp);
+        }
+    }
+
+    for (i = 0; i < 64; i++) {
+        uint64_t attacks = attack_set_bishop_nonmagic(i, 0, 0) & bishop_magics[i].mask;
+        uint64_t current = 0;
+        uint64_t temp = 0;
+        while (1) {
+            bishop_magics[i].table[(current * bishop_magics[i].magic) >> bishop_magics[i].shift] = attack_set_bishop_nonmagic(i, 0, current);
+            if (current == attacks) break;
+            temp = ~(LSB(attacks ^ current) - 1);
+            current = (temp & current) ^ LSB(temp);
+        }
+    }
+
     // Initialize hash-codes
     for (i = 0; i < 64; i++) {
         for (j = 0; j < 12; j++) {
@@ -770,7 +821,7 @@ static void pin_set_bishop(int square, uint64_t blockers,
     ray_blockers_negative(square, blockers, SOUTHWEST, king, pinned, pinner);
 }
 
-static uint64_t attack_set_rook(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
+static uint64_t attack_set_rook_nonmagic(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
     return (
             ray_attacks_positive(square, friendly_occupancy, enemy_occupancy, NORTH) |
             ray_attacks_positive(square, friendly_occupancy, enemy_occupancy, EAST) |
@@ -779,7 +830,7 @@ static uint64_t attack_set_rook(int square, uint64_t friendly_occupancy, uint64_
            );
 }
 
-static uint64_t attack_set_bishop(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
+static uint64_t attack_set_bishop_nonmagic(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
     return (
             ray_attacks_positive(square, friendly_occupancy, enemy_occupancy, NORTHEAST) |
             ray_attacks_positive(square, friendly_occupancy, enemy_occupancy, NORTHWEST) |
@@ -790,6 +841,9 @@ static uint64_t attack_set_bishop(int square, uint64_t friendly_occupancy, uint6
 
 static uint64_t attack_set_queen(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
     return attack_set_rook(square, friendly_occupancy, enemy_occupancy) | attack_set_bishop(square, friendly_occupancy, enemy_occupancy);
+}
+static uint64_t attack_set_queen_nonmagic(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
+    return attack_set_rook_nonmagic(square, friendly_occupancy, enemy_occupancy) | attack_set_bishop_nonmagic(square, friendly_occupancy, enemy_occupancy);
 }
 
 
@@ -1210,6 +1264,7 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
         // Bishops
         moves.piece = BISHOP;
         bmloop(board->pieces[who][BISHOP], square, temp) {
+            assert(attack_set_bishop(square, friendly_occupancy, enemy_occupancy) == attack_set_bishop_nonmagic(square,friendly_occupancy,enemy_occupancy));
             attack = attack_set_bishop(square, friendly_occupancy, enemy_occupancy) & mask;
             moves.board = attack;
             moves.square = square;
@@ -1239,6 +1294,7 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
         // Queens
         moves.piece = QUEEN;
         bmloop(board->pieces[who][QUEEN], square, temp) {
+            assert(attack_set_queen(square, friendly_occupancy, enemy_occupancy) == attack_set_queen_nonmagic(square,friendly_occupancy,enemy_occupancy));
             attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask;
             moves.board = attack;
             moves.square = square;
