@@ -2,6 +2,8 @@
 #include "pieces.h"
 #include <stdio.h>
 #include <time.h>
+#include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #include "search.h"
@@ -9,7 +11,7 @@
 struct state {
     struct board curboard;
     move_t all_moves[1024]; // Move history
-    int depth;
+    int max_thinking_time;
     char side; // which side the engine is on, 0 for white, 1 for black
     char current_side;
     char won; // 0 for undetermined, 1 for draw, 2 for white, 3 for black
@@ -124,8 +126,10 @@ void transposition_table_update(struct transposition * update) {
                 transposition_table[hash1] = *update;
         }
     }
-    else
+    else {
         transposition_table[hash1] = *update;
+        transposition_table_size+=1;
+    }
 }
 
 int transposition_table_read(uint64_t hash, struct transposition* value) {
@@ -139,28 +143,11 @@ int transposition_table_read(uint64_t hash, struct transposition* value) {
     return -1;
 }
 
-void engine_init(int depth, char flags) {
-    rand64_seed(0);
-    initialize_lookup_tables();
-    board_init(&global_state.curboard);
-    if (!(transposition_table = calloc(16777216, sizeof(struct transposition))))
-        exit(1);
-    if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
-        exit(1);
-    if (flags & FLAGS_USE_OPENING_TABLE)
-        load_opening_table("openings.acebase");
-    global_state.side = 0;
-    global_state.current_side = 0;
-    global_state.won = 0;
-    global_state.depth = depth;
-    global_state.flags = flags;
-
-    // Seed the random number generator
-    rand64_seed(time(NULL));
+void engine_init(int max_thinking_time, char flags) {
+    engine_init_from_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", max_thinking_time, flags);
 }
 
-
-void engine_init_from_position(char* position, int depth, char flags) {
+void engine_init_from_position(char* position, int max_thinking_time, char flags) {
     rand64_seed(0);
     initialize_lookup_tables();
     board_init_from_fen(&global_state.curboard, position);
@@ -173,7 +160,7 @@ void engine_init_from_position(char* position, int depth, char flags) {
         load_opening_table("openings.acebase");
     global_state.side = 0;
     global_state.won = 0;
-    global_state.depth = depth;
+    global_state.max_thinking_time = max_thinking_time;
     global_state.flags = flags;
     rand64_seed(time(NULL));
 }
@@ -273,7 +260,7 @@ int engine_play() {
 
     clock_t start = clock();
 
-    move_t move = generate_move(&global_state.curboard, global_state.current_side, &global_state.depth, global_state.flags);
+    move_t move = generate_move(&global_state.curboard, global_state.current_side, global_state.max_thinking_time, global_state.flags);
     char buffer[8];
     move_to_algebraic(&global_state.curboard, buffer, &move);
     printf("%s\n", buffer);
@@ -294,7 +281,6 @@ void engine_print() {
     char piece;
 
     fprintf(stderr, "%llu transpositions stored\n", transposition_table_size);
-    fprintf(stderr, "Search Depth: %d\n", global_state.depth);
     if (global_state.current_side == 0) {
         fprintf(stderr, "White to move!\n");
     } else {

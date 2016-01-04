@@ -121,6 +121,8 @@ void board_init(struct board* board);
 int board_init_from_fen(struct board* out, char* position);
 int board_score(struct board* board, char who, struct moveset* mvs, int nmoves);
 
+int board_npieces(struct board* out, char who);
+
 int apply_move(struct board* board, char who, struct delta* move);
 int reverse_move(struct board* board, char who, move_t* move);
 

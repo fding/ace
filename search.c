@@ -6,12 +6,31 @@
 #include <stdio.h>
 #include <time.h>
 
+#define ISCHECKMATE(s) ((s) > CHECKMATE - 1000)
+
 int alpha_cutoff_count = 0;
 int beta_cutoff_count = 0;
 int short_circuit_count = 0;
 int branches = 0;
+int out_of_time = 0;
+clock_t start;
+int max_thinking_time = 0;
 
 int material_table[5] = {100, 510, 325, 333, 880};
+
+struct absearchparams {
+    int capturemode;
+    int extension;
+    int nullmode;
+};
+
+
+
+int sort_deltaset(struct board* board, char who, struct deltaset* set);
+int alpha_beta_search(struct board* board, move_t* best, move_t* first, int depth, int alpha, int beta, int capturemode, int extension, int nullmode, char who);
+
+int transposition_table_search(struct board* board, struct deltaset* out, int depth, int* score, move_t* best, struct transposition* trans, int alpha, int beta,
+        int capturemode, int extension, int nullmode, char who);
 
 int sort_deltaset(struct board* board, char who, struct deltaset* set) {
     // We sort deltaset to consider checks and captures first
@@ -47,12 +66,67 @@ int sort_deltaset(struct board* board, char who, struct deltaset* set) {
 #define EXACT 4
 #define MOVESTORED 8
 
-int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, int beta, int capturemode, int extension, int nullmode, char who)
+int transposition_table_search(struct board* board, struct deltaset* out, int depth, int* score, move_t* best, struct transposition* trans, int alpha, int beta,
+        int capturemode, int extension, int nullmode, char who) {
+    struct transposition stored;
+    move_t move;
+    move_t temp;
+    int s;
+    if (transposition_table_read(board->hash, &stored) == 0) {
+        if (stored.depth >= depth) {
+            if (stored.type & EXACT) {
+                assert(stored.type & MOVESTORED);
+                *best = *(move_t *) (&stored.move);
+                *score = stored.score;
+                *trans = stored;
+                return 0;
+            }
+            if ((stored.type & ALPHA_CUTOFF) &&
+                    stored.score <= alpha) {
+                *score = stored.score;
+                *trans = stored;
+                return 0;
+            }
+            if ((stored.type & BETA_CUTOFF) &&
+                    stored.score >= beta) {
+                *score = stored.score;
+                *trans = stored;
+                return 0;
+            }
+        } 
+        memcpy(&move, &stored.move, 8);
+        // This is a proven good move, so try it first, to improve
+        // alpha and beta cutoffs
+        if (stored.type & MOVESTORED) {
+            apply_move(board, who, &move);
+
+            s= -alpha_beta_search(board, &temp, NULL, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
+            reverse_move(board, who, &move);
+            if (alpha < s) {
+                alpha = s;
+                *score = alpha;
+                *best = move;
+                memcpy(&trans->move, &move, 8);
+                trans->type = EXACT | MOVESTORED;
+            }
+            if (beta <= alpha) {
+                alpha_cutoff_count += 1;
+                trans->move = *(struct delta_compressed *) (&move);
+                trans->type = BETA_CUTOFF | MOVESTORED;
+                return 0;
+            }
+        }
+    }
+    return -1;
+}
+
+int alpha_beta_search(struct board* board, move_t* best, move_t* first, int depth, int alpha, int beta, int capturemode, int extension, int nullmode, char who)
 {
     // engine_print();
     struct moveset mvs;
     struct deltaset out;
     struct transposition transposition, stored;
+    int pruned = 0;
     move_t move;
     move_t temp;
     mvs.nmoves = 0;
@@ -62,13 +136,18 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
     branches += 1;
     char buffer[8];
 
-    char type = ALPHA_CUTOFF;
     int nmoves = 0;
+    transposition.type = ALPHA_CUTOFF;
 
     generate_moves(&mvs, board, who);
     moveset_to_deltaset(board, &mvs, &out);
 
     nmoves = out.nmoves;
+
+    if (clock() - start > max_thinking_time) {
+        out_of_time = 1;
+        return alpha;
+    }
 
     if (depth == 0 || nmoves == 0) {
         score = board_score(board, who, &mvs, nmoves);
@@ -78,7 +157,7 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
             return score;
         }
 
-        if (extension >= 4) {
+        if (extension >= 3) {
             free(out.moves);
             return score;
         }
@@ -117,60 +196,39 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         if (who) initial_score = -initial_score;
     }
 
-    if (transposition_table_read(board->hash, &stored) == 0) {
-        if (stored.depth >= depth) {
-            if (stored.type & EXACT) {
-                assert(stored.type & MOVESTORED);
-                *best = *(move_t *) (&stored.move);
-                free(out.moves);
-                return stored.score;
-            }
-            if ((stored.type & ALPHA_CUTOFF) &&
-                    stored.score <= alpha) {
-                free(out.moves);
-                return stored.score;
-            }
-            if ((stored.type & BETA_CUTOFF) &&
-                    stored.score >= beta) {
-                short_circuit_count += 1;
-                free(out.moves);
-                return stored.score;
-            }
-        } 
-        memcpy(&move, &stored.move, 8);
-        // This is a proven good move, so try it first, to improve
-        // alpha and beta cutoffs
-        if (stored.type & MOVESTORED) {
-            apply_move(board, who, &move);
+    if (!transposition_table_search(board, &out, depth, &alpha, best, &transposition, alpha, beta, capturemode, extension, nullmode, who)) {
+        goto CLEANUP1;
+    }
+    
+    if (first) {
+        apply_move(board, who, first);
 
-            score = -alpha_beta_search(board, &temp, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
-            reverse_move(board, who, &move);
-            if (alpha <= score) {
-                alpha = score;
-                *best = move;
-                memcpy(&transposition.move, &move, 8);
-                type = EXACT | MOVESTORED;
-            }
-            if (beta <= alpha) {
-                *best = move;
-                alpha = beta;
-                alpha_cutoff_count += 1;
-                type = BETA_CUTOFF | MOVESTORED;
-                goto CLEANUP1;
-            }
+        score = -alpha_beta_search(board, &temp, NULL, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
+        reverse_move(board, who, first);
+        if (alpha < score) {
+            alpha = score;
+            *best = *first;
+            memcpy(&transposition.move, first, 8);
+            transposition.type = EXACT | MOVESTORED;
+        }
+        if (beta <= alpha) {
+            *best = *first;
+            alpha = beta;
+            alpha_cutoff_count += 1;
+            transposition.move = *(struct delta_compressed *) (first);
+            transposition.type = BETA_CUTOFF | MOVESTORED;
+            goto CLEANUP1;
         }
     }
 
     // Null pruning:
     // If we skip a move, and the move is still bad for the oponent,
     // then our move must have been great
-    // Currently buggy (probably en passant), and not sure the time savings
-    // require tuning
-    if (depth > 4 && nullmode == 0 && !capturemode) {
+    if (depth > 4 && nullmode == 0 && !capturemode && !mvs.check && board_npieces(board, who) > 4) {
         uint64_t old_enpassant = board->enpassant;
         board->enpassant = 1;
         board_flip_side(board);
-        score = -alpha_beta_search(board, &temp, depth - 3, -beta, -alpha,
+        score = -alpha_beta_search(board, &temp, NULL, depth - 2, -beta, -alpha,
                 0, extension, 1, 1 - who);
         board_flip_side(board);
         board->enpassant = old_enpassant;
@@ -208,17 +266,19 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
             }
         }
         apply_move(board, who, &out.moves[i]);
-        score = -alpha_beta_search(board, &temp, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
+        score = -alpha_beta_search(board, &temp, NULL, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
         reverse_move(board, who, &out.moves[i]);
         if (alpha < score) {
             *best = out.moves[i];
             alpha = score;
             transposition.move = *(struct delta_compressed *) (&out.moves[i]);
-            type = EXACT | MOVESTORED;
+            transposition.type = EXACT | MOVESTORED;
         }
         if (beta <= alpha) {
             alpha_cutoff_count += 1;
-            type = BETA_CUTOFF | MOVESTORED;
+            *best = out.moves[i];
+            transposition.move = *(struct delta_compressed *) (&out.moves[i]);
+            transposition.type = BETA_CUTOFF | MOVESTORED;
             goto CLEANUP1;
         }
     }
@@ -237,46 +297,50 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
             apply_move(board, who, &out.moves[i]);
             if (initial_score + delta_cutoff < alpha) {
                 reverse_move(board, who, &out.moves[i]);
+                pruned = 1;
                 goto CLEANUP1;
             }
             reverse_move(board, who, &out.moves[i]);
         }
         apply_move(board, who, &out.moves[i]);
-        score = -alpha_beta_search(board, &temp, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
+        score = -alpha_beta_search(board, &temp, NULL, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
         reverse_move(board, who, &out.moves[i]);
         if (alpha < score) {
             *best = out.moves[i];
             alpha = score;
             transposition.move = *(struct delta_compressed *) (&out.moves[i]);
-            type = EXACT | MOVESTORED;
+            transposition.type = EXACT | MOVESTORED;
         }
         if (beta <= alpha) {
+            *best = out.moves[i];
             alpha_cutoff_count += 1;
-            type = BETA_CUTOFF | MOVESTORED;
+            transposition.type = BETA_CUTOFF | MOVESTORED;
+            transposition.move = *(struct delta_compressed *) (&out.moves[i]);
             goto CLEANUP1;
         }
     }
 CLEANUP1:
     free(out.moves);
-    if (capturemode || nullmode) return alpha;
+    if (capturemode || nullmode || pruned || out_of_time) return alpha;
 CLEANUP:
     transposition.hash = board->hash;
     transposition.score = alpha;
     transposition.depth = depth;
-    transposition.type = type;
     transposition.age = board->nmoves;
-    memcpy(&move, &transposition.move, 8);
     transposition_table_update(&transposition);
     return alpha;
 }
 
-move_t generate_move(struct board* board, char who, int* depth, char flags) {
+move_t generate_move(struct board* board, char who, int maxt, char flags) {
+    out_of_time = 0;
     int alpha, beta;
     struct transposition transposition, stored;
-    int i;
+    int i, d;
     int score = -INFINITY;
+    d = 4;
+    max_thinking_time = maxt * CLOCKS_PER_SEC;
 
-    clock_t start = clock();
+    start = clock();
 
     alpha_cutoff_count = 0;
     beta_cutoff_count = 0;
@@ -293,25 +357,39 @@ move_t generate_move(struct board* board, char who, int* depth, char flags) {
         used_table = 1;
         fprintf(stderr, "Applying opening...\n");
         apply_move(board, who, &best);
-        score = alpha_beta_search(board, &temp, 4, alpha, beta,
+        out_of_time = 0;
+        score = alpha_beta_search(board, &temp, NULL, 4, alpha, beta,
             0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, 1 - who);
         reverse_move(board, who, &best);
     } else {
-        score = alpha_beta_search(board, &best, *depth, alpha, beta,
-            0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, who);
+        move_t temp;
+        move_t* first = NULL;
+        char buffer[8];
+        int s;
+        for (d = 4; ; d += 2) {
+            s = alpha_beta_search(board, &best, first, d, alpha, beta,
+                0 /* Capture mode */, 1 /* Extension */, 0 /* null-mode */, who);
+            if (s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
+                score = s;
+                break;
+            }
+            if (out_of_time) {
+                best = temp;
+                break;
+            }
+            else {
+                score = s;
+                temp = best;
+                first = &temp;
+            }
+        }
     }
 
     clock_t end = clock();
-    if (!used_table && (flags & FLAGS_DYNAMIC_DEPTH)) {
-        if (end - start < CLOCKS_PER_SEC / 6) *depth += 1;
-        if (end - start > CLOCKS_PER_SEC * 20) *depth -= 1;
-        if (end - start > CLOCKS_PER_SEC * 40) *depth -= 1;
-        if (*depth <= 5) *depth = 5;
-    }
 
     char buffer[8];
     move_to_algebraic(board, buffer, &best);
-    fprintf(stderr, "Best scoring move is %s: %.2f, %lu\n", buffer, score/100.0, (end-start)*1000/CLOCKS_PER_SEC);
-    fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d\n", branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count);
+    fprintf(stderr, "Best scoring move is %s: %.2f\n", buffer, score/100.0);
+    fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d, depth: %d\n", branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d-2);
     return best;
 }
