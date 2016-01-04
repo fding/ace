@@ -111,7 +111,7 @@ int transposition_table_search(struct board* board, struct deltaset* out, int de
     move_t move;
     move_t temp;
     int s;
-    if (transposition_table_read(board->hash, &stored) == 0 && stored.age < board->nmoves - 2) {
+    if (transposition_table_read(board->hash, &stored) == 0 && position_count_table_read(board->hash) < 1) {
         if (stored.depth >= depth) {
             if ((stored.type & EXACT) && allow_short) {
                 assert(stored.type & MOVESTORED);
@@ -168,6 +168,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     transposition.type = ALPHA_CUTOFF;
     transposition.hash = board->hash;
     transposition.age = board->nmoves;
+    transposition.valid = 1;
 
     generate_moves(&mvs, board, who);
     moveset_to_deltaset(board, &mvs, &out);

@@ -27,7 +27,7 @@ struct position_count {
 // Used for draw detection
 struct position_count position_count_table[256];
 
-static void position_count_table_update(uint64_t hash) {
+void position_count_table_update(uint64_t hash) {
     int hash1 = hash & 0xff;
     if (position_count_table[hash1].valid && position_count_table[hash1].hash == hash) {
         position_count_table[hash1].count++;
@@ -38,7 +38,7 @@ static void position_count_table_update(uint64_t hash) {
     }
 }
 
-static int position_count_table_read(uint64_t hash) {
+int position_count_table_read(uint64_t hash) {
     int hash1 = hash & 0xff;
     if (position_count_table[hash1].valid && position_count_table[hash1].hash == hash)
         return position_count_table[hash1].count;
@@ -113,12 +113,11 @@ void save_opening_table(char * fname) {
 
 void transposition_table_update(struct transposition * update) {
     int hash1 = HASHMASK1 & update->hash;
-    update->valid = 1;
     if (transposition_table[hash1].valid) {
         if (transposition_table[hash1].hash == update->hash) {
             if (update->depth > transposition_table[hash1].depth)
                 transposition_table[hash1] = *update;
-
+            transposition_table[hash1].valid = update->valid;
         } else {
             transposition_table_size+=1;
             if (transposition_table[hash1].depth < update->depth

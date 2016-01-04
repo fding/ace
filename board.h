@@ -144,4 +144,6 @@ int is_valid_move_with_moveset(struct board* board, char who, struct delta move,
 
 int move_equal(move_t m1, move_t m2);
 
+int position_count_table_read(uint64_t hash);
+
 #endif
