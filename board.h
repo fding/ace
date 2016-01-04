@@ -47,6 +47,7 @@ struct moveset {
     char npieces;
     char check;
     char imincheck;
+    char who;
 };
 
 struct delta_compressed {
@@ -133,6 +134,7 @@ uint64_t board_enemy_occupancy(struct board* board, char who);
 
 int board_nmoves_accurate(struct board* board, char who);
 uint64_t is_in_check(struct board* board, int who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
+uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 
 
 int is_valid_move_with_moveset(struct board* board, char who, struct delta move,

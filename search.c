@@ -64,17 +64,24 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
 
     char type = ALPHA_CUTOFF;
     int nmoves = 0;
-    if (mvs.nmoves == 0)
-        nmoves = board_nmoves_accurate(board, who);
 
     generate_moves(&mvs, board, who);
+    moveset_to_deltaset(board, &mvs, &out);
+
+    nmoves = out.nmoves;
+
     if (depth == 0 || nmoves == 0) {
         score = board_score(board, who, &mvs, nmoves);
         if (who) score = -score;
-        if (nmoves == 0 || nullmode) return score;
-
-        if (extension >= 4)
+        if (nmoves == 0 || nullmode) {
+            free(out.moves);
             return score;
+        }
+
+        if (extension >= 4) {
+            free(out.moves);
+            return score;
+        }
         // If either us or opponent has few moves,
         // it is cheaper to search deeper, and there is a mating chance
         else if (nmoves < 6 || mvs.check) {
@@ -89,6 +96,7 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
             extension += 1;
             depth += 2;
         } else {
+            free(out.moves);
             return score;
         }
     }
@@ -97,7 +105,10 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
     if (capturemode) {
         score = board_score(board, who, &mvs, nmoves);
         if (who) score = -score;
-        if (score >= beta) return score;
+        if (score >= beta) {
+            free(out.moves);
+            return score;
+        }
         initial_score = score;
         if (score > alpha)
             alpha = score;
@@ -111,15 +122,18 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
             if (stored.type & EXACT) {
                 assert(stored.type & MOVESTORED);
                 *best = *(move_t *) (&stored.move);
+                free(out.moves);
                 return stored.score;
             }
             if ((stored.type & ALPHA_CUTOFF) &&
                     stored.score <= alpha) {
+                free(out.moves);
                 return stored.score;
             }
             if ((stored.type & BETA_CUTOFF) &&
                     stored.score >= beta) {
                 short_circuit_count += 1;
+                free(out.moves);
                 return stored.score;
             }
         } 
@@ -142,7 +156,7 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
                 alpha = beta;
                 alpha_cutoff_count += 1;
                 type = BETA_CUTOFF | MOVESTORED;
-                goto CLEANUP;
+                goto CLEANUP1;
             }
         }
     }
@@ -160,10 +174,12 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
                 0, extension, 1, 1 - who);
         board_flip_side(board);
         board->enpassant = old_enpassant;
-        if (score >= beta) return score;
+        if (score >= beta) {
+            free(out.moves);
+            return score;
+        }
     }
 
-    moveset_to_deltaset(board, &mvs, &out);
     int ncaptures = sort_deltaset(board, who, &out);
 
     int value = 0;

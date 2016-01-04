@@ -32,6 +32,7 @@ uint64_t rand64(void) {
 void rand64_seed(uint64_t seed) {
     s[0] = 0x123456789abcdef0ull ^ seed;
     p = 0;
+    rand64();
 }
 
 static uint64_t rand64u(void) {

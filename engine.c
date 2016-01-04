@@ -161,6 +161,7 @@ void engine_init(int depth, char flags) {
 
 
 void engine_init_from_position(char* position, int depth, char flags) {
+    rand64_seed(0);
     initialize_lookup_tables();
     board_init_from_fen(&global_state.curboard, position);
     global_state.current_side = global_state.curboard.who;
@@ -174,6 +175,7 @@ void engine_init_from_position(char* position, int depth, char flags) {
     global_state.won = 0;
     global_state.depth = depth;
     global_state.flags = flags;
+    rand64_seed(time(NULL));
 }
 
 int engine_score() {
@@ -203,25 +205,23 @@ void engine_perft(int depth, int who, uint64_t* count, uint64_t* enpassants, uin
     generate_moves(&mvs, &global_state.curboard, who);
     moveset_to_deltaset(&global_state.curboard, &mvs, &out);
     if (depth == 0 && mvs.check) *check += 1;
-    assert(!mvs.imincheck);
     for (i = 0; i < out.nmoves; i++) {
-        apply_move(&global_state.curboard, who, &out.moves[i]);
         move_to_algebraic(&global_state.curboard, buffer, &out.moves[i]);
-        if (!is_in_check(&global_state.curboard, who, board_friendly_occupancy(&global_state.curboard, who), board_enemy_occupancy(&global_state.curboard, who))) {
-            local_count += 1;
-            if (out.moves[i].captured != -1) {
-                if (depth == 0) *captures += 1;
-            }
-            if (depth == 0 && (out.moves[i].misc & 0x40))
-                *enpassants += 1;
-            if (depth == 0 && (out.moves[i].misc & 0x80))
-                *castles += 1;
-            if (depth == 0 && (out.moves[i].promotion != out.moves[i].piece))
-                *promotions += 1;
-            if (depth == 0) *count += 1;
-            else {
-                engine_perft(depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
-            }
+        apply_move(&global_state.curboard, who, &out.moves[i]);
+        local_count += 1;
+        if (out.moves[i].captured != -1) {
+            if (depth == 0) *captures += 1;
+        }
+        if (depth == 0 && (out.moves[i].misc & 0x40))
+            *enpassants += 1;
+        if (depth == 0 && (out.moves[i].misc & 0x80))
+            *castles += 1;
+        if (depth == 0 && (out.moves[i].promotion != out.moves[i].piece))
+            *promotions += 1;
+        if (depth == 0) *count += 1;
+        else {
+            int oldcount = *count;
+            engine_perft(depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
         }
         reverse_move(&global_state.curboard, who, &out.moves[i]);
     }
@@ -260,6 +260,17 @@ static int engine_move_internal(move_t move) {
 
 int engine_play() {
     if (global_state.won) return global_state.won;
+    struct moveset mvs;
+    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
+    int nmoves = board_nmoves_accurate(&global_state.curboard, global_state.current_side);
+    if (nmoves == 0) {
+        if (mvs.check)
+            global_state.won = 3 - global_state.current_side;
+        else if (nmoves == 0)
+            global_state.won = 1;
+        return global_state.won;
+    }
+
     clock_t start = clock();
 
     move_t move = generate_move(&global_state.curboard, global_state.current_side, &global_state.depth, global_state.flags);
