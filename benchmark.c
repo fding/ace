@@ -23,7 +23,6 @@ int main(int argc, char* argv[]) {
     int depth = 6;
     int i = 0;
 
-    char buffer[8];
     engine_init(depth, 0);
     clock_t start = clock();
     for (i = 0; i < 10; i++) {

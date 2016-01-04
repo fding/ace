@@ -30,12 +30,12 @@ int main(int argc, char* argv[]) {
     char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     int c;
     int whitecomp, blackcomp;
-    int depth = 6;
+    int depth = 7;
     whitecomp = 0;
     blackcomp = 0;
     while (1) {
         int option_index = 0;
-        c = getopt_long(argc, argv, "w:b:", long_options, &option_index);
+        c = getopt_long(argc, argv, "w:b:s:d:", long_options, &option_index);
   
         if (c == -1)
             break;

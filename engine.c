@@ -140,6 +140,7 @@ int transposition_table_read(uint64_t hash, struct transposition* value) {
 }
 
 void engine_init(int depth, char flags) {
+    rand64_seed(0);
     initialize_lookup_tables();
     board_init(&global_state.curboard);
     if (!(transposition_table = calloc(16777216, sizeof(struct transposition))))
@@ -151,13 +152,11 @@ void engine_init(int depth, char flags) {
     global_state.side = 0;
     global_state.current_side = 0;
     global_state.won = 0;
-    global_state.depth = depth + 1;
+    global_state.depth = depth;
     global_state.flags = flags;
 
     // Seed the random number generator
-    int i;
-    for (i = 0; i < time(NULL) % 4096; i++)
-        rand64();
+    rand64_seed(time(NULL));
 }
 
 
@@ -198,15 +197,16 @@ int engine_won() {
 void engine_perft(int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles) {
     struct moveset mvs;
     struct deltaset out;
-    generate_moves(&mvs, &global_state.curboard, who);
     int i;
     int local_count = 0;
     char buffer[8];
+    generate_moves(&mvs, &global_state.curboard, who);
     moveset_to_deltaset(&global_state.curboard, &mvs, &out);
     if (depth == 0 && mvs.check) *check += 1;
     assert(!mvs.imincheck);
     for (i = 0; i < out.nmoves; i++) {
         apply_move(&global_state.curboard, who, &out.moves[i]);
+        move_to_algebraic(&global_state.curboard, buffer, &out.moves[i]);
         if (!is_in_check(&global_state.curboard, who, board_friendly_occupancy(&global_state.curboard, who), board_enemy_occupancy(&global_state.curboard, who))) {
             local_count += 1;
             if (out.moves[i].captured != -1) {
@@ -219,7 +219,9 @@ void engine_perft(int depth, int who, uint64_t* count, uint64_t* enpassants, uin
             if (depth == 0 && (out.moves[i].promotion != out.moves[i].piece))
                 *promotions += 1;
             if (depth == 0) *count += 1;
-            else engine_perft(depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
+            else {
+                engine_perft(depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
+            }
         }
         reverse_move(&global_state.curboard, who, &out.moves[i]);
     }

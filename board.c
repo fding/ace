@@ -14,10 +14,6 @@ uint64_t side_hash_code;
  * UTILITY CODE
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-#define LSB(u) ((u) & -(u))
-#define LSBINDEX(u) (__builtin_ctzll(u))
-#define MSB(u) (0x8000000000000000ull >> __builtin_clzll(u))
-
 #define AFILE 0x0101010101010101ull
 #define HFILE 0x8080808080808080ull
 #define RANK1 0x00000000000000ffull
@@ -204,16 +200,6 @@ int board_init_from_fen(struct board* out, char* position) {
     }
 
     return 0;
-}
-
-int bitmap_count_ones(uint64_t bmap) {
-    int count;
-    count = 0;
-    while (bmap) {
-        bmap &= (bmap - 1);
-        count ++;
-    }
-    return count;
 }
 
 char get_piece_on_square(struct board* board, int square) {
@@ -483,51 +469,17 @@ uint64_t knight_move_table[64] = {
 uint64_t king_move_table[64] = {
     0x0000000000000302ull, 0x0000000000000705ull, 0x0000000000000e0aull, 0x0000000000001c14ull, 0x0000000000003828ull, 0x0000000000007050ull, 0x000000000000e0a0ull, 0x000000000000c040ull,
     0x0000000000030203ull, 0x0000000000070507ull, 0x00000000000e0a0eull, 0x00000000001c141cull, 0x0000000000382838ull, 0x0000000000705070ull, 0x0000000000e0a0e0ull, 0x0000000000c040c0ull,
-    0x0000000003020300ull, 0x0000000007050700ull, 0x000000000e0a0e00ull, 0x000000001c14100cull, 0x0000000038283800ull, 0x0000000070507000ull, 0x00000000e0a0e000ull, 0x00000000c040c000ull,
-    0x0000000302030000ull, 0x0000000705070000ull, 0x0000000e0a0e0000ull, 0x0000001c1410000cull, 0x0000003828380000ull, 0x0000007050700000ull, 0x000000e0a0e00000ull, 0x000000c040c00000ull,
-    0x0000030203000000ull, 0x0000070507000000ull, 0x00000e0a0e000000ull, 0x00001c141000000cull, 0x0000382838000000ull, 0x0000705070000000ull, 0x0000e0a0e0000000ull, 0x0000c040c0000000ull,
-    0x0003020300000000ull, 0x0007050700000000ull, 0x000e0a0e00000000ull, 0x001c14100000000cull, 0x0038283800000000ull, 0x0070507000000000ull, 0x00e0a0e000000000ull, 0x00c040c000000000ull,
-    0x0302030000000000ull, 0x0705070000000000ull, 0x0e0a0e0000000000ull, 0x1c1410000000000cull, 0x3828380000000000ull, 0x7050700000000000ull, 0xe0a0e00000000000ull, 0xc040c00000000000ull,
-    0x0203000000000000ull, 0x0507000000000000ull, 0x0a0e000000000000ull, 0x141000000000000cull, 0x2838000000000000ull, 0x5070000000000000ull, 0xa0e0000000000000ull, 0x40c0000000000000ull,
+    0x0000000003020300ull, 0x0000000007050700ull, 0x000000000e0a0e00ull, 0x000000001c141c00ull, 0x0000000038283800ull, 0x0000000070507000ull, 0x00000000e0a0e000ull, 0x00000000c040c000ull,
+    0x0000000302030000ull, 0x0000000705070000ull, 0x0000000e0a0e0000ull, 0x0000001c141c0000ull, 0x0000003828380000ull, 0x0000007050700000ull, 0x000000e0a0e00000ull, 0x000000c040c00000ull,
+    0x0000030203000000ull, 0x0000070507000000ull, 0x00000e0a0e000000ull, 0x00001c141c000000ull, 0x0000382838000000ull, 0x0000705070000000ull, 0x0000e0a0e0000000ull, 0x0000c040c0000000ull,
+    0x0003020300000000ull, 0x0007050700000000ull, 0x000e0a0e00000000ull, 0x001c141c00000000ull, 0x0038283800000000ull, 0x0070507000000000ull, 0x00e0a0e000000000ull, 0x00c040c000000000ull,
+    0x0302030000000000ull, 0x0705070000000000ull, 0x0e0a0e0000000000ull, 0x1c141c0000000000ull, 0x3828380000000000ull, 0x7050700000000000ull, 0xe0a0e00000000000ull, 0xc040c00000000000ull,
+    0x0203000000000000ull, 0x0507000000000000ull, 0x0a0e000000000000ull, 0x141c000000000000ull, 0x2838000000000000ull, 0x5070000000000000ull, 0xa0e0000000000000ull, 0x40c0000000000000ull,
 };
 
 uint64_t ray_table[8][64] = {0};
 
 
-uint64_t rand64(void) {
-    /* The state must be seeded so that it is not everywhere zero. */
-    static int p = 0;
-
-    static uint64_t s[16] = {
-        0x123456789abcdef0ull,
-        0x2eab0093287c1d11ull,
-        0x18ae739cb0aa9301ull,
-        0xa31a1b1582123a11ull,
-        0x819a0a9916273eacull,
-        0x74578b20199a8374ull,
-        0x5738295d930ff847ull,
-        0xf38d7c9dead03911ull,
-        0x0aab930847292413ull,
-        0xc136480012984021ull,
-        0xe920490d89190cc1ull,
-        0xc361161034920591ull,
-        0x92078ca398d93013ull,
-        0x6b9348b734812d98ull,
-        0x31239b8930a0e923ull,
-        0x412b9c09285f5901ull,
-    };
-    const uint64_t s0 = s[p];
-    uint64_t s1 = s[p = (p + 1) & 15];
-    s1 ^= s1 << 31; // a
-    s[p] = s1 ^ s0 ^ (s1 >> 11) ^ (s0 >> 30); // b,c
-    return s[p] * 1181783497276652981ull;
-}
-static uint64_t rand64u(void) {
-    static uint64_t next = 0x1820381947542809;
- 
-    next = next * 1103515245 + 12345;
-    return next;
-}
 void initialize_lookup_tables() {
     int i, j, k, l;
     for (i = 0; i < 8; i++) {
@@ -1118,17 +1070,25 @@ int board_nmoves_accurate(struct board* board, char who) {
     int i, count;
     mvs.npieces = 0;
     mvs.nmoves = 0;
+
+    __builtin_prefetch(ray_table);
+    __builtin_prefetch(knight_move_table);
+    __builtin_prefetch(king_move_table);
+
     generate_moves(&mvs, board, who);
     moveset_to_deltaset(board, &mvs, &out);
 
     count = 0;
     for (i = 0; i < out.nmoves; i++) {
-        apply_move(board, who, &out.moves[i]);
-        if (!is_in_check(board, who, board_friendly_occupancy(board, who),
-                    board_enemy_occupancy(board, who))) {
-            count += 1;
+        // We never move the king into check
+        if (out.moves[i].piece != KING) {
+            apply_move(board, who, &out.moves[i]);
+            if (!is_in_check(board, who, board_friendly_occupancy(board, who),
+                        board_enemy_occupancy(board, who))) {
+                count += 1;
+            }
+            reverse_move(board, who, &out.moves[i]);
         }
-        reverse_move(board, who, &out.moves[i]);
     }
     free(out.moves);
     return count;

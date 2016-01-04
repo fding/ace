@@ -13,7 +13,7 @@ int branches = 0;
 
 int material_table[5] = {100, 510, 325, 333, 880};
 
-void sort_deltaset(struct board* board, char who, struct deltaset* set) {
+int sort_deltaset(struct board* board, char who, struct deltaset* set) {
     // We sort deltaset to consider checks and captures first
     int i, j, k;
     move_t temp;
@@ -39,6 +39,7 @@ void sort_deltaset(struct board* board, char who, struct deltaset* set) {
             }
         }
     }
+    return k;
 }
 
 #define ALPHA_CUTOFF 1
@@ -163,45 +164,64 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
     }
 
     moveset_to_deltaset(board, &mvs, &out);
-    sort_deltaset(board, who, &out);
+    int ncaptures = sort_deltaset(board, who, &out);
 
-    for (i = 0; i < out.nmoves; i++) {
-        int value = 0;
-        int delta_cutoff = 230;
+    int value = 0;
+    int delta_cutoff = 230;
+    for (i = 0; i < ncaptures; i++) {
         // Delta-pruning for quiescent search
         if (capturemode) {
-            if (out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece) {
-                break;
+            if (out.moves[i].captured != -1 ||
+                    out.moves[i].promotion != out.moves[i].piece) {
+                if (out.moves[i].captured != -1)
+                    value = initial_score + material_table[out.moves[i].captured];
+                else if (out.moves[i].promotion != out.moves[i].piece) {
+                    if (out.moves[i].promotion != QUEEN) break;
+                    value = initial_score + 800;
+                }
+                if (value >= beta) {
+                    alpha = value;
+                    goto CLEANUP1;
+                }
+                if (value + delta_cutoff < alpha) {
+                    goto CLEANUP1;
+                }
+                if (alpha < value) {
+                    alpha = value;
+                }
             }
-            if (out.moves[i].captured != -1)
-                value = initial_score + material_table[out.moves[i].captured];
-            else {
-                if (out.moves[i].promotion != QUEEN) break;
-                value = initial_score + 900;
-            }
-            if (value >= beta) {
-                alpha = value;
-                break;
-            }
-            if (value + delta_cutoff < alpha) {
-                break;
-            }
-            if (alpha < value) {
-                alpha = value;
-            }
-        } else if (depth <= 2 && !mvs.check && alpha > -CHECKMATE/2 &&
-                beta < CHECKMATE/2 && nmoves > 5 &&
-                out.moves[i].captured == -1 &&
-                out.moves[i].promotion != out.moves[i].piece) {
+        }
+        apply_move(board, who, &out.moves[i]);
+        score = -alpha_beta_search(board, &temp, depth - 1, -beta, -alpha, capturemode, extension, nullmode, 1 - who);
+        reverse_move(board, who, &out.moves[i]);
+        if (alpha < score) {
+            *best = out.moves[i];
+            alpha = score;
+            transposition.move = *(struct delta_compressed *) (&out.moves[i]);
+            type = EXACT | MOVESTORED;
+        }
+        if (beta <= alpha) {
+            alpha_cutoff_count += 1;
+            type = BETA_CUTOFF | MOVESTORED;
+            goto CLEANUP1;
+        }
+    }
+    if (capturemode) {
+        goto CLEANUP1;
+    }
+
+    for (i = ncaptures; i < out.nmoves; i++) {
+        int value = 0;
+        int delta_cutoff = 230;
+        if (depth <= 2 && !mvs.check && alpha > -CHECKMATE/2 &&
+                beta < CHECKMATE/2 && nmoves > 5) {
             // Futility pruning
             delta_cutoff = 300;
-            if (depth == 1) delta_cutoff = 520;
+            if (depth == 2) delta_cutoff = 520;
             apply_move(board, who, &out.moves[i]);
-            if (!is_in_check(board, 1-who, board_friendly_occupancy(board, 1-who), board_enemy_occupancy(board, 1-who))) {
-                if (initial_score + delta_cutoff < alpha) {
-                    reverse_move(board, who, &out.moves[i]);
-                    break;
-                }
+            if (initial_score + delta_cutoff < alpha) {
+                reverse_move(board, who, &out.moves[i]);
+                goto CLEANUP1;
             }
             reverse_move(board, who, &out.moves[i]);
         }
@@ -217,9 +237,10 @@ int alpha_beta_search(struct board* board, move_t* best, int depth, int alpha, i
         if (beta <= alpha) {
             alpha_cutoff_count += 1;
             type = BETA_CUTOFF | MOVESTORED;
-            break;
+            goto CLEANUP1;
         }
     }
+CLEANUP1:
     free(out.moves);
     if (capturemode || nullmode) return alpha;
 CLEANUP:

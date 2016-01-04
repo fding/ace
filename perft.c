@@ -2,8 +2,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <getopt.h>
 
 #include "ace.h"
+
+
 
 /* Positions are obtained from https://chessprogramming.wikispaces.com/Perft+Results */
 char* positions[] = {
@@ -71,11 +74,39 @@ char* positions[] = {
      */
 };
 
+static struct option long_options[] = {
+    {"starting",  required_argument, 0, 's'},
+    {"depth",  required_argument, 0, 'd'},
+    {0, 0, 0, 0}
+};
+
 int main(int argc, char* argv[]) {
-    int depth = atoi(argv[1]) - 1;
-    int position_i = atoi(argv[2]);
+    int c;
+    int depth;
+    char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    while (1) {
+        int option_index = 0;
+        c = getopt_long(argc, argv, "s:d:", long_options, &option_index);
+  
+        if (c == -1)
+            break;
+        switch (c) {
+            case 's':
+                strcpy(position, optarg);
+                break;
+            case 'd':
+                depth = atoi(optarg) - 1;
+            case '?':
+                break;
+  
+            default:
+                abort ();
+          }
+    }
+
+
     char buffer[8];
-    engine_init_from_position(positions[position_i], depth, 0);
+    engine_init_from_position(position, depth, 0);
     engine_print();
     clock_t start = clock();
     uint64_t count, enpassants, captures, check, promotions, castles;

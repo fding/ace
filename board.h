@@ -5,6 +5,8 @@
 // Public header file
 #include "ace.h"
 
+#include "util.h"
+
 
 typedef int16_t piece_t;
 
