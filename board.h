@@ -142,4 +142,6 @@ uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occu
 int is_valid_move_with_moveset(struct board* board, char who, struct delta move,
         struct moveset* mvs);
 
+int move_equal(move_t m1, move_t m2);
+
 #endif

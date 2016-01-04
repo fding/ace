@@ -17,6 +17,9 @@ clock_t start;
 int max_thinking_time = 0;
 
 int material_table[5] = {100, 510, 325, 333, 880};
+move_t killer[32];
+uint64_t seen[32];
+int ply;
 
 struct absearchparams {
     int capturemode;
@@ -57,6 +60,15 @@ int sort_deltaset(struct board* board, char who, struct deltaset* set) {
             }
         }
     }
+    // Killer moves
+    for (i = k; i < set->nmoves; i++) {
+        if (move_equal(set->moves[i], killer[ply])) {
+            temp = set->moves[k];
+            set->moves[k] = set->moves[i];
+            set->moves[i] = temp;
+            break;
+        }
+    }
     return k;
 }
 
@@ -65,8 +77,6 @@ int sort_deltaset(struct board* board, char who, struct deltaset* set) {
 #define EXACT 4
 #define MOVESTORED 8
 
-uint64_t seen[32];
-int ply;
 
 int try_move(struct board* board, move_t* restrict move, move_t* restrict best, struct transposition* trans, int depth, int* alpha, int beta, int capturemode, int extension, int nullmode, char who) {
     move_t temp;
@@ -83,6 +93,7 @@ int try_move(struct board* board, move_t* restrict move, move_t* restrict best, 
         }
     }
     if (beta <= *alpha) {
+        killer[ply] = *move;
         if (!capturemode && !nullmode && !out_of_time) {
             trans->move = *(struct delta_compressed *) (move);
             trans->type = BETA_CUTOFF | MOVESTORED;
@@ -314,6 +325,8 @@ move_t generate_move(struct board* board, char who, int maxt, char flags) {
     int score = -INFINITY;
     d = 4;
     max_thinking_time = maxt * CLOCKS_PER_SEC;
+    if (!(flags & FLAGS_DYNAMIC_DEPTH))
+        d = 6;
 
     start = clock();
 
@@ -340,7 +353,7 @@ move_t generate_move(struct board* board, char who, int maxt, char flags) {
         reverse_move(board, who, &best);
     } else {
         move_t temp;
-        for (d = 4; ; d += 2) {
+        for (; ; d += 2) {
             s = alpha_beta_search(board, &best, d, alpha, beta,
                 0 /* Capture mode */, 1 /* Extension */, 0 /* null-mode */, who);
             if (out_of_time) {
@@ -356,6 +369,8 @@ move_t generate_move(struct board* board, char who, int maxt, char flags) {
                 if (s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
                     break;
                 }
+                if (!(flags & FLAGS_DYNAMIC_DEPTH))
+                    break;
             }
         }
     }

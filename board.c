@@ -52,6 +52,10 @@ void board_flip_side(struct board* board) {
     board->hash ^= side_hash_code;
 }
 
+int move_equal(move_t m1, move_t m2) {
+    return (m1.square1 == m2.square2) && (m1.piece == m2.piece) && (m1.captured == m2.captured) && (m1.promotion == m2.promotion) && ((m1.misc & 0xc) == (m2.misc & 0xc));
+}
+
 int board_init_from_fen(struct board* out, char* position) {
     /* Format of position:
      * r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -
