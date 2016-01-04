@@ -65,7 +65,7 @@ int sort_deltaset(struct board* board, char who, struct deltaset* set) {
 #define EXACT 4
 #define MOVESTORED 8
 
-int try_move(struct board* board, move_t* move, move_t* best, struct transposition* trans, int depth, int* alpha, int beta, int capturemode, int extension, int nullmode, char who) {
+int try_move(struct board* board, move_t* restrict move, move_t* restrict best, struct transposition* trans, int depth, int* alpha, int beta, int capturemode, int extension, int nullmode, char who) {
     move_t temp;
     apply_move(board, who, move);
     int s= -alpha_beta_search(board, &temp, NULL, depth - 1, -beta, -(*alpha), capturemode, extension, nullmode, 1 - who);
@@ -123,7 +123,7 @@ int transposition_table_search(struct board* board, struct deltaset* out, int de
     return -1;
 }
 
-int alpha_beta_search(struct board* board, move_t* best, move_t* first, int depth, int alpha, int beta, int capturemode, int extension, int nullmode, char who)
+int alpha_beta_search(struct board* board, move_t* restrict best, move_t* restrict first, int depth, int alpha, int beta, int capturemode, int extension, int nullmode, char who)
 {
     // engine_print();
     struct moveset mvs;
@@ -211,6 +211,7 @@ int alpha_beta_search(struct board* board, move_t* best, move_t* first, int dept
     // Null pruning:
     // If we skip a move, and the move is still bad for the oponent,
     // then our move must have been great
+    // We check if we have at least 4 pieces. Otherwise, we might encounter zugzwang
     if (depth > 4 && nullmode == 0 && !capturemode && !mvs.check && board_npieces(board, who) > 4) {
         uint64_t old_enpassant = board->enpassant;
         board->enpassant = 1;
