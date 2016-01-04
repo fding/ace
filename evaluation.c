@@ -539,7 +539,7 @@ int board_score_endgame(struct board* board, char who, struct moveset* mvs, int 
     if (bitmap_count_ones(white) == 1) {
         if (black_major) {
             int rank = wkingsquare / 8;
-            int file = wkingsquare / 8;
+            int file = wkingsquare % 8;
             int dr, df;
             dr = rank;
             df = file;
@@ -554,7 +554,7 @@ int board_score_endgame(struct board* board, char who, struct moveset* mvs, int 
     } else if (bitmap_count_ones(black) == 1) {
         if (white_major) {
             int rank = bkingsquare / 8;
-            int file = bkingsquare / 8;
+            int file = bkingsquare % 8;
             int dr, df;
             dr = rank;
             df = file;
