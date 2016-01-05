@@ -94,11 +94,12 @@ int main(int argc, char* argv[]) {
     else fprintf(stderr, " black player as human. \n");
 
     engine_init_from_position(position, depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    int should_play[2] = {whitecomp, blackcomp};
     while (!engine_won()) {
         fprintf(stderr, "\n\n");
         engine_print();
         fflush(stderr);
-        if (whitecomp)
+        if (should_play[engine_get_who()])
             engine_play();
         else {
             while (1) {
@@ -106,27 +107,8 @@ int main(int argc, char* argv[]) {
                     fprintf(stderr, "EOF");
                     abort();
                 }
-                if (!engine_move(buffer)) {
-                    break;
-                }
-                fprintf(stderr, "Invalid move!\n");
-            }
-        }
-        if (engine_won())  {
-            break;
-        }
-        fprintf(stderr, "\n\n");
-        engine_print();
-        fflush(stderr);
-
-        if (blackcomp)
-            engine_play();
-        else {
-            while (1) {
-                if (scanf("%s", buffer) < 1) {
-                    fprintf(stderr, "EOF");
-                    abort();
-                }
+                if (strcmp(buffer, "exit") == 0)
+                    exit(0);
                 if (!engine_move(buffer)) {
                     break;
                 }

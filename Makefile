@@ -42,5 +42,5 @@ benchmark: benchmark.c libace.a
 playself: playself.c libace.a
 	$(CC) $(CFLAGS) playself.c -lace -o playself
 
-test: test.py perft
+test: test.py perft chess
 	python test.py

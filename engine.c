@@ -134,7 +134,7 @@ void save_opening_table(char * fname) {
     fclose(file);
 }
 
-#define HASHMASK1 ((1ull << 24) - 1)
+#define HASHMASK1 ((1ull << 26) - 1)
 #define HASHMASK2 (((1ull << 48) - 1) ^ HASHMASK1)
 
 void transposition_table_update(struct transposition * update) {
@@ -177,7 +177,7 @@ void engine_init_from_position(char* position, int max_thinking_time, char flags
     initialize_hash_codes();
     board_init_from_fen(&global_state.curboard, position);
     global_state.current_side = global_state.curboard.who;
-    if (!(transposition_table = calloc(16777216, sizeof(struct transposition))))
+    if (!(transposition_table = calloc(67108864, sizeof(struct transposition))))
         exit(1);
     if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
         exit(1);
@@ -266,7 +266,7 @@ static int engine_move_internal(move_t move) {
     else if (nmoves == 0 || global_state.curboard.nmovesnocapture >= 100)
         global_state.won = 1;
     
-    if (mvs.check) printf("Check!\n");
+    if (mvs.check) fprintf(stderr, "Check!\n");
     return 0;
 }
 

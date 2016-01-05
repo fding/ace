@@ -154,12 +154,15 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     branches += 1;
     char buffer[8];
 
-    for (i = 0; i < ply; i++) {
-        if (board->hash == seen[i]) {
-            return 0;
+    if (!nullmode) {
+        for (i = 0; i < ply; i++) {
+            if (board->hash == seen[i]) {
+                return 0;
+            }
         }
+        seen[ply] = board->hash;
     }
-    seen[ply++] = board->hash;
+    ply++;
 
     int nmoves = 0;
     transposition.type = ALPHA_CUTOFF;
@@ -174,18 +177,18 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     if (clock() - start > max_thinking_time) {
         out_of_time = 1;
         ply--;
-        return alpha;
+        return 0;
     }
 
     if (depth == 0 || nmoves == 0) {
         score = board_score(board, who, &out, nmoves);
         if (who) score = -score;
-        if (nmoves == 0 || nullmode) {
+        if (nmoves == 0 || nullmode || capturemode) {
             ply--;
             return score;
         }
 
-        if (extension >= 3) {
+        /*if (extension >= 1) {
             ply--;
             return score;
         }
@@ -198,10 +201,11 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         }
         // Quiescent search:
         // Play out a few captures to see if there is imminent danger
-        else if (!capturemode && extension == 0) {
-            capturemode = 1;
+        else */
+        if (!capturemode) {
             extension += 1;
-            depth += 2;
+            depth += 4;
+            capturemode = 1;
         } else {
             ply--;
             return score;
@@ -214,14 +218,14 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     if (capturemode) {
         score = board_score(board, who, &out, nmoves);
         if (who) score = -score;
-        if (score >= beta) {
+        if (score >= beta && !out.check) {
             ply--;
             return score;
         }
         initial_score = score;
         if (score > alpha)
             alpha = score;
-    } else if (depth == 1) {
+    } else if (depth <= 2) {
         initial_score = board_score(board, who, &out, nmoves);
         if (who) initial_score = -initial_score;
     }
@@ -239,7 +243,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         uint64_t old_enpassant = board->enpassant;
         board->enpassant = 1;
         board_flip_side(board);
-        score = -alpha_beta_search(board, &temp, depth - 2, -beta, -alpha,
+        score = -alpha_beta_search(board, &temp, depth - 3, -beta, -alpha,
                 0, extension, 1, 1 - who);
         board_flip_side(board);
         board->enpassant = old_enpassant;
@@ -252,7 +256,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     int ncaptures = sort_deltaset(board, who, &out);
 
     int value = 0;
-    int delta_cutoff = 230;
+    int delta_cutoff = 350;
     for (i = 0; i < ncaptures; i++) {
         // Delta-pruning for quiescent search
         if (capturemode) {
@@ -279,20 +283,21 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         if (!try_move(board, &out.moves[i], best, &transposition, depth, &alpha, beta, capturemode, extension, nullmode, who))
             goto CLEANUP1;
     }
-    if (capturemode) {
+    if (capturemode && !out.check) {
         goto CLEANUP1;
     }
 
     for (i = ncaptures; i < out.nmoves; i++) {
-        int value = 0;
-        int delta_cutoff = 230;
-        if (depth <= 2 && !out.check && alpha > -CHECKMATE/2 &&
-                beta < CHECKMATE/2 && nmoves > 5) {
+        if (depth <= 1 && !out.check && alpha > -CHECKMATE/2 &&
+                beta < CHECKMATE/2 && nmoves > 5 && !out.check) {
             // Futility pruning
-            delta_cutoff = 300;
-            if (depth == 2) delta_cutoff = 520;
+            delta_cutoff = 650;
+            if (depth == 2) delta_cutoff = 1500;
             apply_move(board, who, &out.moves[i]);
-            if (initial_score + delta_cutoff < alpha) {
+            if (!is_in_check(board, 1 - who,
+                        board_friendly_occupancy(board, 1-who),
+                        board_enemy_occupancy(board, 1-who))
+                    && initial_score + delta_cutoff < alpha) {
                 reverse_move(board, who, &out.moves[i]);
                 pruned = 1;
                 goto CLEANUP1;
@@ -315,10 +320,12 @@ move_t generate_move(struct board* board, char who, int maxt, char flags) {
     struct transposition transposition, stored;
     int i, d, s;
     int score = -INFINITY;
-    d = 4;
+    d = 2;
     max_thinking_time = maxt * CLOCKS_PER_SEC;
-    if (!(flags & FLAGS_DYNAMIC_DEPTH))
+    if (!(flags & FLAGS_DYNAMIC_DEPTH)) {
         d = 6;
+        max_thinking_time = 1000 * CLOCKS_PER_SEC;
+    }
 
     start = clock();
 
@@ -346,23 +353,30 @@ move_t generate_move(struct board* board, char who, int maxt, char flags) {
         reverse_move(board, who, &best);
     } else {
         move_t temp;
-        for (; ; d += 2) {
-            s = alpha_beta_search(board, &best, d, alpha, beta,
-                0 /* Capture mode */, 1 /* Extension */, 0 /* null-mode */, who);
-            if (out_of_time) {
-                best = temp;
-                break;
-            }
-            else {
-                score = s;
-                temp = best;
-                allow_short = 1;
-                if (s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
+        if (flags & FLAGS_DYNAMIC_DEPTH) {
+            for ( d = 4; ; d += 1) {
+                s = alpha_beta_search(board, &best, d, alpha, beta,
+                    0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, who);
+                if (out_of_time) {
+                    best = temp;
                     break;
                 }
-                if (!(flags & FLAGS_DYNAMIC_DEPTH))
-                    break;
+                else {
+                    score = s;
+                    temp = best;
+                    allow_short = 1;
+                    if (s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
+                        break;
+                    }
+                    if (!(flags & FLAGS_DYNAMIC_DEPTH))
+                        break;
+                }
             }
+        }
+        else {
+            d = 6;
+            score = alpha_beta_search(board, &best, d, alpha, beta,
+                0 /* Capture mode */, 0 /* Extension */, 0 /* null-mode */, who);
         }
     }
 
