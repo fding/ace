@@ -1,4 +1,5 @@
 #include "board.h"
+#include "moves.h"
 #include "pieces.h"
 #include <stdio.h>
 #include <time.h>
@@ -23,6 +24,32 @@ struct position_count {
     char valid;
     char count;
 };
+
+uint64_t square_hash_codes[64][12];
+uint64_t castling_hash_codes[4];
+uint64_t enpassant_hash_codes[8];
+uint64_t side_hash_code;
+
+
+void initialize_hash_codes(void) {
+    int i, j;
+    rand64_seed(0);
+    // Initialize hash-codes
+    for (i = 0; i < 64; i++) {
+        for (j = 0; j < 12; j++) {
+            square_hash_codes[i][j] = rand64();
+        }
+    }
+    for (i = 0; i < 4; i++) {
+        castling_hash_codes[i] = rand64();
+    }
+    for (i = 0; i < 8; i++) {
+        enpassant_hash_codes[i] = rand64();
+    }
+
+    side_hash_code = rand64();
+}
+
 
 // Used for draw detection
 struct position_count position_count_table[256];
@@ -107,7 +134,6 @@ void save_opening_table(char * fname) {
     fclose(file);
 }
 
-
 #define HASHMASK1 ((1ull << 24) - 1)
 #define HASHMASK2 (((1ull << 48) - 1) ^ HASHMASK1)
 
@@ -147,8 +173,8 @@ void engine_init(int max_thinking_time, char flags) {
 }
 
 void engine_init_from_position(char* position, int max_thinking_time, char flags) {
-    rand64_seed(0);
-    initialize_lookup_tables();
+    initialize_move_tables();
+    initialize_hash_codes();
     board_init_from_fen(&global_state.curboard, position);
     global_state.current_side = global_state.curboard.who;
     if (!(transposition_table = calloc(16777216, sizeof(struct transposition))))

@@ -189,8 +189,8 @@ int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) 
     black = black_pawns | black_minor | black_major | black_king;
 
     uint64_t whiteattack, blackattack, whiteundefended, blackundefended;
-    whiteattack = attacked_squares(board, 0, white, black);
-    blackattack = attacked_squares(board, 1, black, white);
+    whiteattack = attacked_squares(board, 0, white | black);
+    blackattack = attacked_squares(board, 1, black | white);
 
     whiteundefended = blackattack ^ (whiteattack & blackattack);
     blackundefended = whiteattack ^ (whiteattack & blackattack);
@@ -524,8 +524,8 @@ int board_score_endgame(struct board* board, char who, struct moveset* mvs, int 
     black = black_pawns | black_minor | black_major | black_king;
 
     uint64_t whiteattack, blackattack, whiteundefended, blackundefended;
-    whiteattack = attacked_squares(board, 0, white, black);
-    blackattack = attacked_squares(board, 1, black, white);
+    whiteattack = attacked_squares(board, 0, white | black);
+    blackattack = attacked_squares(board, 1, black | white);
 
     whiteundefended = blackattack ^ (whiteattack & blackattack);
     blackundefended = whiteattack ^ (whiteattack & blackattack);

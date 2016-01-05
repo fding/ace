@@ -104,8 +104,6 @@ int main(int argc, char* argv[]) {
           }
     }
 
-
-    char buffer[8];
     engine_init_from_position(position, depth, 0);
     engine_print();
     clock_t start = clock();

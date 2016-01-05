@@ -11,6 +11,7 @@ struct magic {
 
 extern struct magic bishop_magics[64];
 extern struct magic rook_magics[64];
+extern uint64_t magic_table[107648];
 
 void initialize_magics(void);
 

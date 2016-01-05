@@ -7,6 +7,20 @@
 
 #include "util.h"
 
+#define AFILE 0x0101010101010101ull
+#define HFILE 0x8080808080808080ull
+#define RANK1 0x00000000000000ffull
+#define RANK2 0x000000000000ff00ull
+#define RANK3 0x0000000000ff0000ull
+#define RANK6 0x0000ff0000000000ull
+#define RANK7 0x00ff000000000000ull
+#define RANK8 0xff00000000000000ull
+
+
+extern uint64_t square_hash_codes[64][12];
+extern uint64_t castling_hash_codes[4];
+extern uint64_t enpassant_hash_codes[8];
+extern uint64_t side_hash_code;
 
 typedef int16_t piece_t;
 
@@ -38,15 +52,11 @@ struct moveset_piece {
     char castle;
 };
 
-void initialize_lookup_tables();
-uint64_t rand64();
-
 struct moveset {
     struct moveset_piece moves[18];
-    short nmoves;
+    char nmoves;
     char npieces;
     char check;
-    char imincheck;
     char who;
 };
 
@@ -144,6 +154,18 @@ int is_valid_move_with_moveset(struct board* board, char who, struct delta move,
 
 int move_equal(move_t m1, move_t m2);
 
+
+int is_valid_move(struct board* board, char who, struct delta move);
+void board_flip_side(struct board* board);
+
+
 int position_count_table_read(uint64_t hash);
+void position_count_table_update(uint64_t hash);
+
+int opening_table_read(uint64_t hash, move_t* move);
+void opening_table_update(uint64_t hash, move_t move, char avoid);
+void save_opening_table(char * fname);
+
+uint64_t attacked_squares(struct board* board, char who, uint64_t occ);
 
 #endif

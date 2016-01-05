@@ -170,26 +170,27 @@ int BBits[64] = {
  
 int main() {
   int square;
+  int i = 0;
  
   printf("#include \"magic.h\"\n");
   printf("#include <stdlib.h>\n");
   printf("void initialize_magics(void) {\n");
   for(square = 0; square < 64; square++) {
-    printf("    rook_magics[%d].table = calloc((1 << %d), 8);\n", square, RBits[square]);
-    printf("    if (!rook_magics[%d].table) abort();\n", square);
+    printf("    rook_magics[%d].table = magic_table + %d;\n", square, i);
     printf("    rook_magics[%d].mask = 0x%llxull;\n", square, rmask(square));
     printf("    rook_magics[%d].magic = 0x%llxull;\n", square, find_magic(square, RBits[square], 0));
     printf("    rook_magics[%d].shift = %d;\n", square, 64 - RBits[square]);
+      i += 1 << RBits[square];
   }
             
   printf("\n\n");
  
   for(square = 0; square < 64; square++) {
-    printf("    bishop_magics[%d].table = calloc((1 << %d), 8);\n", square, BBits[square]);
-    printf("    if (!bishop_magics[%d].table) abort();\n", square);
-    printf("    bishop_magics[%d].mask = 0x%llxull;\n", square, bmask(square));
-    printf("    bishop_magics[%d].magic = 0x%llxull;\n", square, find_magic(square, BBits[square], 1));
-    printf("    bishop_magics[%d].shift = %d;\n", square, 64 - BBits[square]);
+      printf("    bishop_magics[%d].table = magic_table + %d;\n", square, i);
+      printf("    bishop_magics[%d].mask = 0x%llxull;\n", square, bmask(square));
+      printf("    bishop_magics[%d].magic = 0x%llxull;\n", square, find_magic(square, BBits[square], 1));
+      printf("    bishop_magics[%d].shift = %d;\n", square, 64 - BBits[square]);
+      i += 1 << BBits[square];
   }
   printf("}");
  

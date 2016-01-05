@@ -9,14 +9,15 @@ generate_magic: generate_magic.c
 magic.c: generate_magic
 	./generate_magic > magic.c
 
-libace.a: board.c engine.c search.c util.c evaluation.c magic.c
+libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c
 	$(CC) -o magic.o -c magic.c
+	$(CC) -o moves.o -c moves.c
 	$(CC) -o board.o -c board.c
 	$(CC) -o util.o -c util.c
 	$(CC) -o engine.o -c engine.c
 	$(CC) -o search.o -c search.c
 	$(CC) -o evaluation.o -c evaluation.c
-	ar r libace.a board.o engine.o search.o util.o evaluation.o magic.o
+	ar r libace.a moves.o board.o engine.o search.o util.o evaluation.o magic.o
 
 score: libace.a score.c
 	$(CC) $(CFLAGS) score.c -lace -o score
