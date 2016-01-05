@@ -1,5 +1,5 @@
 CC=clang
-CFLAGS=-L. -g -O3 -Wall -mpopcnt -mlzcnt
+CFLAGS=-L. -O3 -Wall -mpopcnt -mlzcnt
 
 all: libace.a chess perft benchmark init
 
@@ -10,13 +10,13 @@ magic.c: generate_magic
 	./generate_magic > magic.c
 
 libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c
-	$(CC) -o magic.o -c magic.c
-	$(CC) -o moves.o -c moves.c
-	$(CC) -o board.o -c board.c
-	$(CC) -o util.o -c util.c
-	$(CC) -o engine.o -c engine.c
-	$(CC) -o search.o -c search.c
-	$(CC) -o evaluation.o -c evaluation.c
+	$(CC) $(CFLAGS) -o magic.o -c magic.c
+	$(CC) $(CFLAGS) -o moves.o -c moves.c
+	$(CC) $(CFLAGS) -o board.o -c board.c
+	$(CC) $(CFLAGS) -o util.o -c util.c
+	$(CC) $(CFLAGS) -o engine.o -c engine.c
+	$(CC) $(CFLAGS) -o search.o -c search.c
+	$(CC) $(CFLAGS) -o evaluation.o -c evaluation.c
 	ar r libace.a moves.o board.o engine.o search.o util.o evaluation.o magic.o
 
 

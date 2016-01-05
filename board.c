@@ -633,7 +633,8 @@ void generate_moves(struct deltaset* mvs, struct board* board, char who) {
     uint64_t temp, square;
     uint64_t attack, opponent_attacks;
     uint64_t friendly_occupancy, enemy_occupancy;
-    uint64_t check, mask, nopiececheck;
+    uint64_t check, nopiececheck;
+    register uint64_t mask;
 
     // uint64_t pinned, bishop_pinners, rook_pinners;
 
@@ -695,16 +696,13 @@ void generate_moves(struct deltaset* mvs, struct board* board, char who) {
         // Knights
         bmloop(board->pieces[who][KNIGHT], square, temp) {
             if ((1ull << square) & pinned) {
-                bmloop(pinners, pinsq, pintemp) {
-                    pinmask = ray_between(kingsquare, pinsq);
-                    if (pinmask & (1ull << square)) break;
-                }
-                attack = attack_set_knight(square, friendly_occupancy, enemy_occupancy) & mask & pinmask;
+                // Knights can never escape pins, so do nothing
+                continue;
             }
             else {
                 attack = attack_set_knight(square, friendly_occupancy, enemy_occupancy) & mask;
+                deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy);
             }
-            deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy);
         }
         // Bishops
         bmloop(board->pieces[who][BISHOP], square, temp) {

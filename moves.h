@@ -24,6 +24,12 @@ extern uint64_t (*attack_set_pawn_multiple_capture_right[2])(uint64_t, uint64_t,
 extern uint64_t (*attack_set_pawn_multiple_advance_one[2])(uint64_t, uint64_t, uint64_t);
 extern uint64_t (*attack_set_pawn_multiple_advance_two[2])(uint64_t, uint64_t, uint64_t);
 
+
+
+uint64_t attack_set_pawn_black(int square, uint64_t enpassant, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
+uint64_t attack_set_pawn_white(int square, uint64_t enpassant, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
+
+
 uint64_t ray_attacks_positive(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy, int direction);
 uint64_t ray_attacks_negative(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy, int direction);
 

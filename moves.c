@@ -210,7 +210,7 @@ static uint64_t attack_set_pawn_white_capture(int square, uint64_t enpassant, ui
     return attacks;
 }
 
-static uint64_t attack_set_pawn_white(int square, uint64_t enpassant, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
+uint64_t attack_set_pawn_white(int square, uint64_t enpassant, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
     uint64_t blockers = friendly_occupancy | enemy_occupancy;
     uint64_t attacks;
     uint64_t pawn = 1ull << square;
@@ -236,7 +236,7 @@ static uint64_t attack_set_pawn_black_capture(int square, uint64_t enpassant, ui
     return attacks;
 }
 
-static uint64_t attack_set_pawn_black(int square, uint64_t enpassant, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
+uint64_t attack_set_pawn_black(int square, uint64_t enpassant, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
     uint64_t blockers = friendly_occupancy | enemy_occupancy;
     uint64_t attacks;
     uint64_t pawn = (1ull << square);
