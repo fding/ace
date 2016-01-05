@@ -10,14 +10,18 @@ magic.c: generate_magic
 	./generate_magic > magic.c
 
 libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c
-	$(CC) $(CFLAGS) -o magic.o -c magic.c
-	$(CC) $(CFLAGS) -o moves.o -c moves.c
-	$(CC) $(CFLAGS) -o board.o -c board.c
-	$(CC) $(CFLAGS) -o util.o -c util.c
-	$(CC) $(CFLAGS) -o engine.o -c engine.c
-	$(CC) $(CFLAGS) -o search.o -c search.c
-	$(CC) $(CFLAGS) -o evaluation.o -c evaluation.c
-	ar r libace.a moves.o board.o engine.o search.o util.o evaluation.o magic.o
+	$(CC) $(CFLAGS) -o magic.bc -c magic.c
+	$(CC) $(CFLAGS) -o moves.bc -c moves.c
+	$(CC) $(CFLAGS) -o board.bc -c board.c
+	$(CC) $(CFLAGS) -o util.bc -c util.c
+	$(CC) $(CFLAGS) -o engine.bc -c engine.c
+	$(CC) $(CFLAGS) -o search.bc -c search.c
+	$(CC) $(CFLAGS) -o evaluation.bc -c evaluation.c
+	$(CC) $(CFLAGS) -flto -r -o ace.o magic.o moves.o board.o util.o engine.o search.o evaluation.o
+	ar rc libace.a ace.o
+
+clean:
+	rm -f *.o
 
 
 score: libace.a score.c

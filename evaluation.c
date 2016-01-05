@@ -815,3 +815,4 @@ int board_score_endgame(struct board* board, char who, struct deltaset* mvs, int
 
     return score;
 }
+

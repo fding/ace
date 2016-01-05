@@ -41,3 +41,4 @@ static uint64_t rand64u(void) {
     next = next * 1103515245 + 12345;
     return next;
 }
+

@@ -386,3 +386,4 @@ uint64_t xray_bishop_attacks(int square, uint64_t occ, uint64_t blockers) {
    blockers &= attacks;
    return (attacks ^ attack_set_bishop(square, 0, occ ^ blockers)) | blockers;
 }
+

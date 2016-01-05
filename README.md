@@ -61,7 +61,7 @@ and they never move a king into check;
 however, some of these moves might move a pinned piece out of the pin.
 The second stage thus eliminates these moves to generate a set of completely legal moves.
 ACE's move generation is reasonably efficient:
-it can generate about 10 million moves per second on my 8 GB machine with Intel 2.6 GHz Intel Core i5.
+it can generate about 27 million moves per second on my 8 GB machine with Intel 2.6 GHz Intel Core i5.
 
 Board scoring considers material advantage, piece positions (knights are better in the center of the board,
 and the king is better away from the center until the endgame), pawn structure (bonuses for passed pawns, penalties for isolated pawns
