@@ -208,16 +208,15 @@ int engine_won() {
     return global_state.won;
 }
 
-void engine_perft(int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles) {
+void engine_perft(int initial, int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles) {
     struct deltaset mvs;
     int i;
     int local_count = 0;
-    char buffer[8];
     generate_moves(&mvs, &global_state.curboard, who);
+    char buffer[8];
     if (depth == 0 && mvs.check) *check += 1;
     for (i = 0; i < mvs.nmoves; i++) {
         apply_move(&global_state.curboard, who, &mvs.moves[i]);
-        local_count += 1;
         if (mvs.moves[i].captured != -1) {
             if (depth == 0) *captures += 1;
         }
@@ -227,10 +226,14 @@ void engine_perft(int depth, int who, uint64_t* count, uint64_t* enpassants, uin
             *castles += 1;
         if (depth == 0 && (mvs.moves[i].promotion != mvs.moves[i].piece))
             *promotions += 1;
+        int oldcount = *count;
         if (depth == 0) *count += 1;
         else {
-            int oldcount = *count;
-            engine_perft(depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
+            engine_perft(depth, depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
+        }
+        if (depth == initial) {
+            move_to_algebraic(&global_state.curboard, buffer, &mvs.moves[i]);
+            fprintf(stderr, "%s: %llu\n", buffer, *count - oldcount);
         }
         reverse_move(&global_state.curboard, who, &mvs.moves[i]);
     }

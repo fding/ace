@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
     check = 0;
     castles = 0;
     promotions = 0;
-    engine_perft(depth, engine_get_who(), &count, &enpassants, &captures, &check, &promotions, &castles);
+    engine_perft(depth, depth, engine_get_who(), &count, &enpassants, &captures, &check, &promotions, &castles);
     clock_t end = clock();
     printf("Perft: %llu nodes in %.2f s (%.2f moves/sec)\n"
             "%llu captures, %llu enpassants, %llu checks, %llu promotions, %llu castles\n",

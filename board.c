@@ -559,7 +559,7 @@ int deltaset_add_move(struct board* board, char who, struct deltaset * out, int 
         // The case of en-passant is tricky, as it's the only
         // time you can invoke a discovered check on your self
         if (piece == PAWN && (square2-square1) % 8 != 0 && !(mask2 & enemy)) {
-            if (is_in_check_slider(board, who, friendly, enemy ^ board->enpassant))
+            if (is_in_check_slider(board, who, friendly ^ mask1 ^ mask2, enemy ^ board->enpassant))
                 continue;
         }
         if (piece == PAWN && (mask2 & (RANK1 | RANK8))) {
@@ -667,6 +667,7 @@ void generate_moves(struct deltaset* mvs, struct board* board, char who) {
     bmloop(pinners, pinsq, pintemp) {
         pinned |= ray_between(kingsquare, pinsq);
     }
+    mvs->pinned = friendly_occupancy & pinned;
 
     opponent_attacks = attacked_squares(board, 1-who, enemy_occupancy | (friendly_occupancy ^ king));
 
@@ -677,13 +678,17 @@ void generate_moves(struct deltaset* mvs, struct board* board, char who) {
 
     if (check_count == 2) {
         // We can only move king
-        deltaset_add_move(board, who, mvs, KING, square, attack, friendly_occupancy, enemy_occupancy);
+        attack = attack_set_king(kingsquare, friendly_occupancy, enemy_occupancy);
+        attack = ~opponent_attacks & attack;
+        deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy);
+        return;
     }
     else {
         if (check) {
             mask = check;
             int attacker = LSBINDEX(check);
-            mask |= ray_between(attacker, kingsquare);
+            if (!(check & (board->pieces[1 - who][KNIGHT])))
+                mask |= ray_between(attacker, kingsquare);
         }
 
         // The following are ordered in likelihood that moving the piece is a good move
@@ -767,8 +772,7 @@ void generate_moves(struct deltaset* mvs, struct board* board, char who) {
         }
 
         // King
-        square = kingsquare;
-        attack = attack_set_king(square, friendly_occupancy, enemy_occupancy);
+        attack = attack_set_king(kingsquare, friendly_occupancy, enemy_occupancy);
         attack = ~opponent_attacks & attack;
         deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy);
         if (who) {
@@ -776,26 +780,26 @@ void generate_moves(struct deltaset* mvs, struct board* board, char who) {
             if ((board->cancastle & 0x02) &&
                     !(0x0e00000000000000ull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x1c00000000000000ull & opponent_attacks)) {
-                deltaset_add_castle(mvs, square, 58);
+                deltaset_add_castle(mvs, kingsquare, 58);
             }
             // Black kingside
             if ((board->cancastle & 0x01) &&
                     !(0x6000000000000000ull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x7000000000000000ull & opponent_attacks)) {
-                deltaset_add_castle(mvs, square, 62);
+                deltaset_add_castle(mvs, kingsquare, 62);
             }
         } else {
             // White queenside;
             if ((board->cancastle & 0x08) &&
                     !(0x000000000000000eull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x000000000000001cull & opponent_attacks)) {
-                deltaset_add_castle(mvs, square, 3);
+                deltaset_add_castle(mvs, kingsquare, 2);
             }
             // White kingside
             if ((board->cancastle & 0x04) &&
                     !(0x0000000000000060ull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x0000000000000070ull & opponent_attacks)) {
-                deltaset_add_castle(mvs, square, 6);
+                deltaset_add_castle(mvs, kingsquare, 6);
             }
         }
     }

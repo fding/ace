@@ -103,6 +103,7 @@ struct deltaset {
     short nmoves;
     char check;
     char who;
+    uint64_t pinned; // a bitmap of all pinned pieces
 };
 
 /* Board functions */
