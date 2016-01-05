@@ -19,13 +19,18 @@ libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c
 	$(CC) -o evaluation.o -c evaluation.c
 	ar r libace.a moves.o board.o engine.o search.o util.o evaluation.o magic.o
 
+
 score: libace.a score.c
 	$(CC) $(CFLAGS) score.c -lace -o score
 
 init: libace.a init.c
 	$(CC) $(CFLAGS) init.c -lace -o init
 
-chess: libace.a main.c
+openings.acebase: init openings.txt
+	rm -f openings.acebase
+	./init openings.txt
+
+chess: libace.a main.c openings.acebase
 	$(CC) $(CFLAGS) main.c -lace -o chess
 
 perft: perft.c libace.a
@@ -36,3 +41,6 @@ benchmark: benchmark.c libace.a
 
 playself: playself.c libace.a
 	$(CC) $(CFLAGS) playself.c -lace -o playself
+
+test: test.py perft
+	python test.py
