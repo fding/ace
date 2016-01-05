@@ -185,13 +185,11 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         score = board_score(board, who, &mvs, nmoves);
         if (who) score = -score;
         if (nmoves == 0 || nullmode) {
-            free(out.moves);
             ply--;
             return score;
         }
 
         if (extension >= 3) {
-            free(out.moves);
             ply--;
             return score;
         }
@@ -209,7 +207,6 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
             extension += 1;
             depth += 2;
         } else {
-            free(out.moves);
             ply--;
             return score;
         }
@@ -222,7 +219,6 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         score = board_score(board, who, &mvs, nmoves);
         if (who) score = -score;
         if (score >= beta) {
-            free(out.moves);
             ply--;
             return score;
         }
@@ -252,7 +248,6 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         board_flip_side(board);
         board->enpassant = old_enpassant;
         if (score >= beta) {
-            free(out.moves);
             ply--;
             return score;
         }
@@ -312,7 +307,6 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
             goto CLEANUP1;
     }
 CLEANUP1:
-    free(out.moves);
     ply--;
     if (capturemode || nullmode || pruned || out_of_time) return alpha;
     transposition_table_update(&transposition);

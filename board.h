@@ -114,7 +114,7 @@ int transposition_table_read(uint64_t hash, struct transposition* value);
 typedef struct delta move_t;
 
 struct deltaset {
-    move_t* moves;
+    move_t moves[256];
     int nmoves;
 };
 

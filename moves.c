@@ -32,6 +32,8 @@ uint64_t king_move_table[64] = {
 
 uint64_t ray_table[8][64] = {0};
 
+uint64_t ray_between_table[64][64];
+
 struct magic bishop_magics[64];
 struct magic rook_magics[64];
 
@@ -77,6 +79,10 @@ static uint64_t attack_set_bishop_nonmagic(int square, uint64_t friendly_occupan
            );
 }
 
+uint64_t ray_between(int square1, int square2) {
+    return ray_between_table[square1][square2];
+}
+
 char castle_priv[64];
 
 void initialize_move_tables() {
@@ -101,6 +107,55 @@ void initialize_move_tables() {
                 ray_table[SOUTHEAST][i * 8 + j] |= (1ull << (k * 8 + l));
             for (k = i - 1, l = j - 1; k >=0 && l >=0; k-- && l--)
                 ray_table[SOUTHWEST][i * 8 + j] |= (1ull << (k * 8 + l));
+        }
+    }
+
+    for (i = 0; i < 8; i++) {
+        for (j = 0; j < 8; j++) {
+            int sq1 = 8 * i + j;
+            uint64_t ray = 1ull << sq1;
+            ray_between_table[sq1][sq1] = ray;
+            for (k = i + 1; k < 8; k++) {
+                ray |= (1ull << (k * 8 + j));
+                ray_between_table[sq1][8*k+j] = ray;
+            }
+            ray = 1ull << sq1;
+            for (k = j + 1; k < 8; k++) {
+                ray |= (1ull << (i * 8 + k));
+                ray_between_table[sq1][i*8+k] = ray;
+            }
+            ray = 1ull << sq1;
+            for (k = i - 1; k >= 0; k--) {
+                ray |= (1ull << (k * 8 + j));
+                ray_between_table[sq1][8*k+j] = ray;
+            }
+            ray = 1ull << sq1;
+            for (k = j - 1; k >= 0; k--) {
+                ray |= (1ull << (i * 8 + k));
+                ray_between_table[sq1][i*8+k] = ray;
+            }
+
+            ray = 1ull << sq1;
+            for (k = i + 1, l = j + 1; k < 8 && l < 8; k++ && l++) {
+                ray |= 1ull << (k * 8 + l);
+                ray_between_table[sq1][k * 8 + l] = ray;
+            }
+            ray = 1ull << sq1;
+            for (k = i + 1, l = j - 1; k < 8 && l >=0; k++ && l--) {
+                ray |= 1ull << (k * 8 + l);
+                ray_between_table[sq1][k * 8 + l] = ray;
+            }
+            ray = 1ull << sq1;
+            for (k = i - 1, l = j + 1; k >=0 && l < 8; k-- && l++) {
+                ray |= 1ull << (k * 8 + l);
+                ray_between_table[sq1][k * 8 + l] = ray;
+            }
+            ray = 1ull << sq1;
+            for (k = i - 1, l = j - 1; k >=0 && l >=0; k-- && l--) {
+                ray |= 1ull << (k * 8 + l);
+                ray_between_table[sq1][k * 8 + l] = ray;
+            }
+
         }
     }
 
@@ -318,6 +373,7 @@ uint64_t attack_set_rook(int square, uint64_t friendly_occupancy, uint64_t enemy
 uint64_t attack_set_queen(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
     return attack_set_rook(square, friendly_occupancy, enemy_occupancy) | attack_set_bishop(square, friendly_occupancy, enemy_occupancy);
 }
+
 
 uint64_t xray_rook_attacks(int square, uint64_t occ, uint64_t blockers) {
    uint64_t attacks = attack_set_rook(square, 0, occ);
