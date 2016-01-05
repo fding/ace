@@ -191,7 +191,7 @@ void engine_init_from_position(char* position, int max_thinking_time, char flags
 }
 
 int engine_score() {
-    struct moveset mvs;
+    struct deltaset mvs;
     generate_moves(&mvs, &global_state.curboard, global_state.current_side);
     return board_score(&global_state.curboard, global_state.current_side, &mvs, -1);
 }
@@ -209,37 +209,35 @@ int engine_won() {
 }
 
 void engine_perft(int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles) {
-    struct moveset mvs;
-    struct deltaset out;
+    struct deltaset mvs;
     int i;
     int local_count = 0;
     char buffer[8];
     generate_moves(&mvs, &global_state.curboard, who);
-    moveset_to_deltaset(&global_state.curboard, &mvs, &out);
     if (depth == 0 && mvs.check) *check += 1;
-    for (i = 0; i < out.nmoves; i++) {
-        apply_move(&global_state.curboard, who, &out.moves[i]);
+    for (i = 0; i < mvs.nmoves; i++) {
+        apply_move(&global_state.curboard, who, &mvs.moves[i]);
         local_count += 1;
-        if (out.moves[i].captured != -1) {
+        if (mvs.moves[i].captured != -1) {
             if (depth == 0) *captures += 1;
         }
-        if (depth == 0 && (out.moves[i].misc & 0x40))
+        if (depth == 0 && (mvs.moves[i].misc & 0x40))
             *enpassants += 1;
-        if (depth == 0 && (out.moves[i].misc & 0x80))
+        if (depth == 0 && (mvs.moves[i].misc & 0x80))
             *castles += 1;
-        if (depth == 0 && (out.moves[i].promotion != out.moves[i].piece))
+        if (depth == 0 && (mvs.moves[i].promotion != mvs.moves[i].piece))
             *promotions += 1;
         if (depth == 0) *count += 1;
         else {
             int oldcount = *count;
             engine_perft(depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
         }
-        reverse_move(&global_state.curboard, who, &out.moves[i]);
+        reverse_move(&global_state.curboard, who, &mvs.moves[i]);
     }
 }
 
 static int engine_move_internal(move_t move) {
-    struct moveset mvs;
+    struct deltaset mvs;
 
     if (global_state.won) return global_state.won;
     if (is_valid_move(&global_state.curboard, global_state.current_side, move))
@@ -271,9 +269,9 @@ static int engine_move_internal(move_t move) {
 
 int engine_play() {
     if (global_state.won) return global_state.won;
-    struct moveset mvs;
+    struct deltaset mvs;
     generate_moves(&mvs, &global_state.curboard, global_state.current_side);
-    int nmoves = board_nmoves_accurate(&global_state.curboard, global_state.current_side);
+    int nmoves = mvs.nmoves;
     if (nmoves == 0) {
         if (mvs.check)
             global_state.won = 3 - global_state.current_side;

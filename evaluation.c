@@ -19,7 +19,7 @@ int abs(int s) {
 }
 
 
-int board_score_endgame(struct board* board, char who, struct moveset* mvs, int nmoves);
+int board_score_endgame(struct board* board, char who, struct deltaset* mvs, int nmoves);
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Evaluation CODE
@@ -152,7 +152,7 @@ int passed_pawn_table_endgame[8] = {0, 20, 30, 40, 77, 154, 256, 800};
  *  1. Endgame table
  *  2. Finer material nuances, like material hash table
  */
-int board_score(struct board* board, char who, struct moveset* mvs, int nmoves) {
+int board_score(struct board* board, char who, struct deltaset* mvs, int nmoves) {
     int i;
     int seen;
     int rank, file, pwho;
@@ -492,7 +492,7 @@ int dist(int sq1, int sq2) {
 }
 
 // Endgame behames very differently, so we have a separate scoring function
-int board_score_endgame(struct board* board, char who, struct moveset* mvs, int nmoves) {
+int board_score_endgame(struct board* board, char who, struct deltaset* mvs, int nmoves) {
     int i;
     int seen;
     int rank, file, pwho;

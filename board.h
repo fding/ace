@@ -45,21 +45,6 @@ struct board {
 struct board;
 struct state;
 
-struct moveset_piece {
-    uint64_t board;
-    char piece;
-    char square;
-    char castle;
-};
-
-struct moveset {
-    struct moveset_piece moves[18];
-    char nmoves;
-    char npieces;
-    char check;
-    char who;
-};
-
 struct delta_compressed {
     // A reversible change to board
     char square1;
@@ -115,21 +100,15 @@ typedef struct delta move_t;
 
 struct deltaset {
     move_t moves[256];
-    int nmoves;
+    short nmoves;
+    char check;
+    char who;
 };
-
-/* Moveset functions */
-void moveset_push(struct moveset* moveset, struct moveset_piece* move);
-int moveset_pop(struct moveset* moveset, struct moveset_piece* out);
-void moveset_print(struct board* board, struct moveset* mvs);
-
-int moveset_to_deltaset(struct board* board, struct moveset* mvs, struct deltaset* out);
-
 
 /* Board functions */
 void board_init(struct board* board);
 int board_init_from_fen(struct board* out, char* position);
-int board_score(struct board* board, char who, struct moveset* mvs, int nmoves);
+int board_score(struct board* board, char who, struct deltaset* mvs, int nmoves);
 
 int board_npieces(struct board* out, char who);
 
@@ -139,7 +118,7 @@ int reverse_move(struct board* board, char who, move_t* move);
 int algebraic_to_move(char* input, struct board* board, move_t* move);
 void move_to_algebraic(struct board* board, char* buffer, struct delta* move);
 
-void generate_moves(struct moveset* mvs, struct board* board, char who);
+void generate_moves(struct deltaset* mvs, struct board* board, char who);
 
 uint64_t board_friendly_occupancy(struct board* board, char who);
 uint64_t board_enemy_occupancy(struct board* board, char who);
@@ -148,9 +127,6 @@ int board_nmoves_accurate(struct board* board, char who);
 uint64_t is_in_check(struct board* board, int who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 
-
-int is_valid_move_with_moveset(struct board* board, char who, struct delta move,
-        struct moveset* mvs);
 
 int move_equal(move_t m1, move_t m2);
 

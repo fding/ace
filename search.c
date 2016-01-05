@@ -144,14 +144,11 @@ int transposition_table_search(struct board* board, struct deltaset* out, int de
 int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int alpha, int beta, int capturemode, int extension, int nullmode, char who)
 {
     // engine_print();
-    struct moveset mvs;
     struct deltaset out;
     struct transposition transposition, stored;
     int pruned = 0;
     move_t move;
     move_t temp;
-    mvs.nmoves = 0;
-    mvs.npieces = 0;
     int score = 0;
     int i = 0;
     branches += 1;
@@ -170,8 +167,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     transposition.age = board->nmoves;
     transposition.valid = 1;
 
-    generate_moves(&mvs, board, who);
-    moveset_to_deltaset(board, &mvs, &out);
+    generate_moves(&out, board, who);
 
     nmoves = out.nmoves;
 
@@ -182,7 +178,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     }
 
     if (depth == 0 || nmoves == 0) {
-        score = board_score(board, who, &mvs, nmoves);
+        score = board_score(board, who, &out, nmoves);
         if (who) score = -score;
         if (nmoves == 0 || nullmode) {
             ply--;
@@ -195,7 +191,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         }
         // If either us or opponent has few moves,
         // it is cheaper to search deeper, and there is a mating chance
-        else if (nmoves < 6 || mvs.check) {
+        else if (nmoves < 6 || out.check) {
             extension += 1;
             capturemode = 0;
             depth += 2;
@@ -216,7 +212,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
 
     int initial_score = 0;
     if (capturemode) {
-        score = board_score(board, who, &mvs, nmoves);
+        score = board_score(board, who, &out, nmoves);
         if (who) score = -score;
         if (score >= beta) {
             ply--;
@@ -226,7 +222,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
         if (score > alpha)
             alpha = score;
     } else if (depth == 1) {
-        initial_score = board_score(board, who, &mvs, nmoves);
+        initial_score = board_score(board, who, &out, nmoves);
         if (who) initial_score = -initial_score;
     }
 
@@ -239,7 +235,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     // If we skip a move, and the move is still bad for the oponent,
     // then our move must have been great
     // We check if we have at least 4 pieces. Otherwise, we might encounter zugzwang
-    if (depth > 4 && nullmode == 0 && !capturemode && !mvs.check && board_npieces(board, who) > 4) {
+    if (depth > 4 && nullmode == 0 && !capturemode && !out.check && board_npieces(board, who) > 4) {
         uint64_t old_enpassant = board->enpassant;
         board->enpassant = 1;
         board_flip_side(board);
@@ -290,7 +286,7 @@ int alpha_beta_search(struct board* board, move_t* restrict best, int depth, int
     for (i = ncaptures; i < out.nmoves; i++) {
         int value = 0;
         int delta_cutoff = 230;
-        if (depth <= 2 && !mvs.check && alpha > -CHECKMATE/2 &&
+        if (depth <= 2 && !out.check && alpha > -CHECKMATE/2 &&
                 beta < CHECKMATE/2 && nmoves > 5) {
             // Futility pruning
             delta_cutoff = 300;

@@ -314,35 +314,6 @@ void move_to_algebraic(struct board* board, char* buffer, struct delta* move) {
     }
 }
 
-void moveset_push(struct moveset* moveset, struct moveset_piece* move) {
-    assert(moveset->npieces < 18);
-    moveset->moves[moveset->npieces] = *move;
-    moveset->nmoves += bitmap_count_ones(move->board);
-    moveset->npieces += 1;
-}
-
-int moveset_pop(struct moveset* moveset, struct moveset_piece* out) {
-    if (moveset->npieces == 0) return -1;
-    *out = moveset->moves[moveset->npieces];
-    moveset->npieces -= 1;
-    moveset->nmoves -= bitmap_count_ones(out->board);
-    return 0;
-}
-
-
-void moveset_print(struct board* board, struct moveset* mvs) {
-    int i;
-    char buffer[8];
-    struct deltaset ds;
-    moveset_to_deltaset(board, mvs, &ds);
-    for (i = 0; i < ds.nmoves; i++) {
-        move_to_algebraic(board, buffer, &ds.moves[i]);
-        fprintf(stderr, "%s ", buffer);
-    }
-    fprintf(stderr, "\n");
-}
-
-
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * CHECKING CODE
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
@@ -393,52 +364,16 @@ uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occu
  * MOVE VALIDATION CODE
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-int is_valid_move_with_moveset(struct board* board, char who, struct delta move,
-        struct moveset* mvs) {
-    int i;
-    uint64_t dest = (1ull << move.square2);
-    if (move.captured != -1) {
-        if ((move.captured != PAWN || move.piece != PAWN) &&
-                !(dest & P2BM(board, 6 * (1-who) + move.captured)))
-            return 0;
-        else if (move.captured == PAWN && move.piece == PAWN) {
-            if (who) {
-                if (!(board->enpassant & (dest >> 8)) &&
-                        !(dest & P2BM(board, 6 * (1-who) + move.captured)))
-                    return 0;
-            } else {
-                if (!(board->enpassant & (dest << 8)) &&
-                        !(dest & P2BM(board, 6 * (1-who) + move.captured)))
-                    return 0;
-            }
-        }
-    }
-    for (i = 0; i < mvs->npieces; i++) {
-        if (mvs->moves[i].piece == move.piece && mvs->moves[i].square == move.square1)
-        {
-            if ((mvs->moves[i].board & dest) && !(move.misc & 0x80)) return 1;
-            if (mvs->moves[i].castle && (move.misc & 0x80)) return 1;
-        }
-    }
-    return 0;
-}
 
 int is_valid_move(struct board* board, char who, struct delta move) {
-    struct moveset mvs;
-    mvs.npieces = 0;
-    mvs.nmoves = 0;
+    struct deltaset mvs;
     generate_moves(&mvs, board, who);
-    if (is_valid_move_with_moveset(board, who, move, &mvs)) {
-        apply_move(board, who, &move);
-        if (is_in_check(board, who, board_friendly_occupancy(board, who),
-                    board_enemy_occupancy(board, who))) {
-            reverse_move(board, who, &move);
+    int i;
+    for (i = 0; i < mvs.nmoves; i++) {
+        if (move_equal(mvs.moves[i], move))
             return 0;
-        }
-        reverse_move(board, who, &move);
-        return 1;
     }
-    return 0;
+    return 1;
 }
 
 int apply_move(struct board* board, char who, struct delta* move) {
@@ -606,14 +541,9 @@ uint64_t board_enemy_occupancy(struct board* board, char who) {
 }
 
 int board_nmoves_accurate(struct board* board, char who) {
-    struct moveset mvs;
-    struct deltaset out;
-    mvs.npieces = 0;
-    mvs.nmoves = 0;
-
+    struct deltaset mvs;
     generate_moves(&mvs, board, who);
-    moveset_to_deltaset(board, &mvs, &out);
-    return out.nmoves;
+    return mvs.nmoves;
 }
 
 int deltaset_add_move(struct board* board, char who, struct deltaset * out, int piece, int square1, uint64_t attacks, uint64_t friendly, uint64_t enemy) {
@@ -696,30 +626,7 @@ void deltaset_add_castle(struct deltaset *out, int square1, int square2) {
     out->nmoves += 1;
 }
 
-int moveset_to_deltaset(struct board* board, struct moveset* mvs, struct deltaset *out) {
-    out->nmoves = 0;
-    if (!out->moves)
-        return -1;
-    int i, j, k, square;
-    uint64_t temp, mask, friendly, enemy, checkers;
-    char who = mvs->who;
-    friendly = board_friendly_occupancy(board, who);
-    enemy = board_enemy_occupancy(board, who);
-    i = 0;
-
-
-    int kingsquare = LSBINDEX(board->pieces[who][KING]);
-
-    for (j = 0; j < mvs->npieces; j++) {
-        if (mvs->moves[j].castle) {
-            deltaset_add_castle(out, mvs->moves[j].square, LSBINDEX(mvs->moves[j].board));
-        } else {
-            deltaset_add_move(board, who, out, mvs->moves[j].piece, mvs->moves[j].square, mvs->moves[j].board, friendly, enemy);
-        }
-    }
-    return 0;
-}
-void generate_moves(struct moveset* mvs, struct board* board, char who) {
+void generate_moves(struct deltaset* mvs, struct board* board, char who) {
     // Generate pseudo-legal moves
     // Some pins against the king will be disregarded, but
     // picked up next cycle
@@ -727,11 +634,9 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
     uint64_t attack, opponent_attacks;
     uint64_t friendly_occupancy, enemy_occupancy;
     uint64_t check, mask, nopiececheck;
-    struct moveset_piece moves;
 
     // uint64_t pinned, bishop_pinners, rook_pinners;
 
-    mvs->npieces = 0;
     mvs->nmoves = 0;
     mvs->check = 0;
     mvs->who = who;
@@ -772,12 +677,7 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
 
     if (check_count == 2) {
         // We can only move king
-        attack = attack_set_king(kingsquare, friendly_occupancy, enemy_occupancy);
-        moves.board = attack & (~opponent_attacks);
-        moves.piece = KING;
-        moves.square = square;
-        moves.castle = 0;
-        moveset_push(mvs, &moves);
+        deltaset_add_move(board, who, mvs, KING, square, attack, friendly_occupancy, enemy_occupancy);
     }
     else {
         if (check) {
@@ -786,10 +686,8 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
             mask |= ray_between(attacker, kingsquare);
         }
 
-        moves.castle = 0;
         // The following are ordered in likelihood that moving the piece is a good move
         // Knights
-        moves.piece = KNIGHT;
         bmloop(board->pieces[who][KNIGHT], square, temp) {
             if ((1ull << square) & pinned) {
                 bmloop(pinners, pinsq, pintemp) {
@@ -801,12 +699,9 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
             else {
                 attack = attack_set_knight(square, friendly_occupancy, enemy_occupancy) & mask;
             }
-            moves.board = attack;
-            moves.square = square;
-            moveset_push(mvs, &moves);
+            deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy);
         }
         // Bishops
-        moves.piece = BISHOP;
         bmloop(board->pieces[who][BISHOP], square, temp) {
             if ((1ull << square) & pinned) {
                 bmloop(pinners, pinsq, pintemp) {
@@ -817,13 +712,10 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
             } else {
                 attack = attack_set_bishop(square, friendly_occupancy, enemy_occupancy) & mask;
             }
-            moves.board = attack;
-            moves.square = square;
-            moveset_push(mvs, &moves);
+            deltaset_add_move(board, who, mvs, BISHOP, square, attack, friendly_occupancy, enemy_occupancy);
         }
 
         // Pawns
-        moves.piece = PAWN;
         bmloop(board->pieces[who][PAWN], square, temp) {
             if ((1ull << square) & pinned) {
                 bmloop(pinners, pinsq, pintemp) {
@@ -844,14 +736,10 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
             } else {
                 attack &= mask;
             }
-            moves.board = attack;
-            moves.square = square;
-            moveset_push(mvs, &moves);
-            mvs->nmoves += bitmap_count_ones((RANK1 | RANK8) & attack) * 3;
+            deltaset_add_move(board, who, mvs, PAWN, square, attack, friendly_occupancy, enemy_occupancy);
         }
 
         // Queens
-        moves.piece = QUEEN;
         bmloop(board->pieces[who][QUEEN], square, temp) {
             if ((1ull << square) & pinned) {
                 bmloop(pinners, pinsq, pintemp) {
@@ -862,12 +750,9 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
             } else {
                 attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask;
             }
-            moves.board = attack;
-            moves.square = square;
-            moveset_push(mvs, &moves);
+            deltaset_add_move(board, who, mvs, QUEEN, square, attack, friendly_occupancy, enemy_occupancy);
         }
         // Rooks
-        moves.piece = ROOK;
         bmloop(board->pieces[who][ROOK], square, temp) {
             if ((1ull << square) & pinned) {
                 bmloop(pinners, pinsq, pintemp) {
@@ -878,61 +763,39 @@ void generate_moves(struct moveset* mvs, struct board* board, char who) {
             } else {
                 attack = attack_set_rook(square, friendly_occupancy, enemy_occupancy) & mask;
             }
-            moves.board = attack;
-            moves.square = square;
-            moveset_push(mvs, &moves);
+            deltaset_add_move(board, who, mvs, ROOK, square, attack, friendly_occupancy, enemy_occupancy);
         }
 
         // King
-        moves.piece = KING;
         square = kingsquare;
         attack = attack_set_king(square, friendly_occupancy, enemy_occupancy);
         attack = ~opponent_attacks & attack;
-        moves.board = attack;
-        moves.square = square;
-        moves.castle = 0;
-        moveset_push(mvs, &moves);
+        deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy);
         if (who) {
             // Black queenside
             if ((board->cancastle & 0x02) &&
                     !(0x0e00000000000000ull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x1c00000000000000ull & opponent_attacks)) {
-                moves.board = 0x0400000000000000ull;
-                moves.piece = KING;
-                moves.square = square;
-                moves.castle = 3;
-                moveset_push(mvs, &moves);
+                deltaset_add_castle(mvs, square, 58);
             }
             // Black kingside
             if ((board->cancastle & 0x01) &&
                     !(0x6000000000000000ull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x7000000000000000ull & opponent_attacks)) {
-                moves.board = 0x4000000000000000ull;
-                moves.piece = KING;
-                moves.square = square;
-                moves.castle = 4;
-                moveset_push(mvs, &moves);
+                deltaset_add_castle(mvs, square, 62);
             }
         } else {
             // White queenside;
             if ((board->cancastle & 0x08) &&
                     !(0x000000000000000eull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x000000000000001cull & opponent_attacks)) {
-                moves.board = 0x0000000000000004ull;
-                moves.piece = KING;
-                moves.square = square;
-                moves.castle = 1;
-                moveset_push(mvs, &moves);
+                deltaset_add_castle(mvs, square, 3);
             }
             // White kingside
             if ((board->cancastle & 0x04) &&
                     !(0x0000000000000060ull & (friendly_occupancy | enemy_occupancy)) &&
                     !(0x0000000000000070ull & opponent_attacks)) {
-                moves.board = 0x0000000000000040ull;
-                moves.piece = KING;
-                moves.square = square;
-                moves.castle = 2;
-                moveset_push(mvs, &moves);
+                deltaset_add_castle(mvs, square, 6);
             }
         }
     }
