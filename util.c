@@ -34,11 +34,3 @@ void rand64_seed(uint64_t seed) {
     p = 0;
     rand64();
 }
-
-static uint64_t rand64u(void) {
-    static uint64_t next = 0x1820381947542809;
- 
-    next = next * 1103515245 + 12345;
-    return next;
-}
-

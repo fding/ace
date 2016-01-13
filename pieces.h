@@ -21,4 +21,6 @@
 #define BLACKBISHOP 9
 #define BLACKQUEEN 10
 #define BLACKKING 11
+
+extern const char* piece_names;
 #endif

@@ -30,7 +30,7 @@ uint64_t king_move_table[64] = {
     0x0203000000000000ull, 0x0507000000000000ull, 0x0a0e000000000000ull, 0x141c000000000000ull, 0x2838000000000000ull, 0x5070000000000000ull, 0xa0e0000000000000ull, 0x40c0000000000000ull,
 };
 
-uint64_t ray_table[8][64] = {0};
+uint64_t ray_table[8][64] = {{0}};
 
 uint64_t ray_between_table[64][64];
 
@@ -343,7 +343,7 @@ uint64_t (*attack_set_pawn_multiple_capture_movement[2])(uint64_t) = {attack_set
 uint64_t (*attack_set_pawn_multiple_capture_left[2])(uint64_t, uint64_t, uint64_t) = {attack_set_pawn_multiple_white_capture_left, attack_set_pawn_multiple_black_capture_left};
 uint64_t (*attack_set_pawn_multiple_capture_right[2])(uint64_t, uint64_t, uint64_t) = {attack_set_pawn_multiple_white_capture_right, attack_set_pawn_multiple_black_capture_right};
 
-uint64_t (*attack_set_pawn_multiple_advance_one[2])(uint64_t, uint64_t, uint64_t) = {attack_set_pawn_multiple_white_advance_one, attack_set_pawn_multiple_black_advance_two};
+uint64_t (*attack_set_pawn_multiple_advance_one[2])(uint64_t, uint64_t, uint64_t) = {attack_set_pawn_multiple_white_advance_one, attack_set_pawn_multiple_black_advance_one};
 uint64_t (*attack_set_pawn_multiple_advance_two[2])(uint64_t, uint64_t, uint64_t) = {attack_set_pawn_multiple_white_advance_two, attack_set_pawn_multiple_black_advance_two};
 
 uint64_t attack_set_knight(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {

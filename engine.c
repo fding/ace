@@ -157,12 +157,11 @@ void transposition_table_update(struct transposition * update) {
     }
 }
 
-int transposition_table_read(uint64_t hash, struct transposition* value) {
+int transposition_table_read(uint64_t hash, struct transposition** value) {
     int hash1 = HASHMASK1 & hash;
     if (transposition_table[hash1].valid && transposition_table[hash1].hash == hash)
     {
-        assert(transposition_table[hash1].valid == 1);
-        *value = transposition_table[hash1];
+        *value = &transposition_table[hash1];
         return 0;
     }
     return -1;
@@ -172,35 +171,44 @@ void engine_init(int max_thinking_time, char flags) {
     engine_init_from_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", max_thinking_time, flags);
 }
 
-void engine_init_from_position(char* position, int max_thinking_time, char flags) {
-    initialize_move_tables();
-    initialize_hash_codes();
-    board_init_from_fen(&global_state.curboard, position);
+int initialized = 0;
+
+char* engine_init_from_position(char* position, int max_thinking_time, char flags) {
+    char * pos;
+    if (!initialized) {
+        initialized = 1;
+        initialize_move_tables();
+        initialize_hash_codes();
+        if (posix_memalign((void **) &transposition_table, 64, 67108864 * sizeof(struct transposition))) {
+            exit(1);
+        }
+        memset(transposition_table, 0, 67108864 * sizeof(struct transposition));
+        if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
+            exit(1);
+        if (flags & FLAGS_USE_OPENING_TABLE)
+            load_opening_table("openings.acebase");
+    }
+    pos = board_init_from_fen(&global_state.curboard, position);
     global_state.current_side = global_state.curboard.who;
-    if (!(transposition_table = calloc(67108864, sizeof(struct transposition))))
-        exit(1);
-    if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
-        exit(1);
-    if (flags & FLAGS_USE_OPENING_TABLE)
-        load_opening_table("openings.acebase");
     global_state.side = 0;
     global_state.won = 0;
     global_state.max_thinking_time = max_thinking_time;
     global_state.flags = flags;
     rand64_seed(time(NULL));
+    return pos;
 }
 
 int engine_score() {
     struct deltaset mvs;
     generate_moves(&mvs, &global_state.curboard, global_state.current_side);
-    return board_score(&global_state.curboard, global_state.current_side, &mvs, -1);
+    return board_score(&global_state.curboard, global_state.current_side, &mvs, -31000, 31000);
 }
 
 struct board* engine_get_board() {
     return &global_state.curboard;
 }
 
-char engine_get_who() {
+unsigned char engine_get_who() {
     return global_state.current_side;
 }
 
@@ -211,11 +219,12 @@ int engine_won() {
 void engine_perft(int initial, int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles) {
     struct deltaset mvs;
     int i;
-    int local_count = 0;
     generate_moves(&mvs, &global_state.curboard, who);
     char buffer[8];
+    uint64_t oldhash;
     if (depth == 0 && mvs.check) *check += 1;
     for (i = 0; i < mvs.nmoves; i++) {
+        oldhash = global_state.curboard.hash;
         apply_move(&global_state.curboard, who, &mvs.moves[i]);
         if (mvs.moves[i].captured != -1) {
             if (depth == 0) *captures += 1;
@@ -236,6 +245,7 @@ void engine_perft(int initial, int depth, int who, uint64_t* count, uint64_t* en
             fprintf(stderr, "%s: %llu\n", buffer, *count - oldcount);
         }
         reverse_move(&global_state.curboard, who, &mvs.moves[i]);
+        assert(global_state.curboard.hash == oldhash);
     }
 }
 
@@ -288,7 +298,10 @@ int engine_play() {
     move_t move = generate_move(&global_state.curboard, global_state.current_side, global_state.max_thinking_time, global_state.flags);
     char buffer[8];
     move_to_algebraic(&global_state.curboard, buffer, &move);
-    printf("%s\n", buffer);
+    if (global_state.flags & FLAGS_UCI_MODE) 
+        printf("bestmove %s\n", buffer);
+    else
+        printf("%s\n", buffer);
     fflush(stdout);
     fprintf(stderr, "Spent %lu milliseconds for move %s\n", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
     return engine_move_internal(move);
@@ -301,47 +314,31 @@ int engine_move(char * buffer) {
 }
 
 extern uint64_t transposition_table_size;
+
 void engine_print() {
     struct board* board = &global_state.curboard;
-    char piece;
+    char fen[256];
+    struct deltaset mvs;
+    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
 
     fprintf(stderr, "%llu transpositions stored\n", transposition_table_size);
+    board_to_fen(board, fen);
+    fprintf(stderr, "FEN: %s\n", fen);
+    int score = board_score(board, global_state.current_side, &mvs, -31000, 31000);
+    fprintf(stderr, "Static Board Score: %.2f\n", score / 100.0);
     if (global_state.current_side == 0) {
         fprintf(stderr, "White to move!\n");
     } else {
         fprintf(stderr, "Black to move!\n");
     }
     fprintf(stderr, "Enpassant: %llx\n", board->enpassant);
-    uint64_t mask;
     for (int i = 7; i >= 0; i--) {
         for (int j = 0; j < 8; j++) {
-            mask = 1ull << (8 * i + j);
-            if (mask & P2BM(board, WHITEPAWN))
-                fprintf(stderr, " P ");
-            else if (mask & P2BM(board, WHITEKNIGHT))
-                fprintf(stderr, " N ");
-            else if (mask & P2BM(board, WHITEBISHOP))
-                fprintf(stderr, " B ");
-            else if (mask & P2BM(board, WHITEROOK))
-                fprintf(stderr, " R ");
-            else if (mask & P2BM(board, WHITEQUEEN))
-                fprintf(stderr, " Q ");
-            else if (mask & P2BM(board, WHITEKING))
-                fprintf(stderr, " K ");
-            else if (mask & P2BM(board, BLACKPAWN))
-                fprintf(stderr, " p ");
-            else if (mask & P2BM(board, BLACKKNIGHT))
-                fprintf(stderr, " n ");
-            else if (mask & P2BM(board, BLACKBISHOP))
-                fprintf(stderr, " b ");
-            else if (mask & P2BM(board, BLACKROOK))
-                fprintf(stderr, " r ");
-            else if (mask & P2BM(board, BLACKQUEEN))
-                fprintf(stderr, " q ");
-            else if (mask & P2BM(board, BLACKKING))
-                fprintf(stderr, " k ");
-            else
+            char piece = get_piece_on_square(board, 8 * i + j);
+            if (piece == -1)
                 fprintf(stderr, " . ");
+            else
+                fprintf(stderr, " %c ", piece_names[piece]);
         }
         fprintf(stderr, "\n\n");
     }

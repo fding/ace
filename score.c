@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
+#include <getopt.h>
 
 #include "ace.h"
 
@@ -20,10 +21,36 @@ char* positions[] = {
     "1K1Q4/8/2n5/8/8/8/8/7k w - - 0 1",
 };
 
+static struct option long_options[] = {
+    {"starting",  required_argument, 0, 's'},
+    {"depth",  required_argument, 0, 'd'},
+    {0, 0, 0, 0}
+};
+
 int main(int argc, char* argv[]) {
-    int position_i = atoi(argv[1]);
-    char buffer[8];
-    engine_init_from_position(positions[position_i], 0, 0);
+    int c;
+    int depth;
+    char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    while (1) {
+        int option_index = 0;
+        c = getopt_long(argc, argv, "s:d:", long_options, &option_index);
+  
+        if (c == -1)
+            break;
+        switch (c) {
+            case 's':
+                strcpy(position, optarg);
+                break;
+            case 'd':
+                depth = atoi(optarg) - 1;
+            case '?':
+                break;
+  
+            default:
+                abort ();
+          }
+    }
+    engine_init_from_position(position, 0, 0);
     int score = engine_score();
     engine_print();
     printf("Score: %d\n", score);

@@ -7,14 +7,11 @@
 #include "magic.h"
 #include "moves.h"
 
-
-uint64_t xray_rook_attacks(int square, uint64_t occ, uint64_t blockers);
-uint64_t xray_bishop_attacks(int square, uint64_t occ, uint64_t blockers);
-
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * UTILITY CODE
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+const char* piece_names = "PRNBQKprnbqk";
 
 void copy_board(struct board* out, struct board* in) {
     memcpy(out->pieces, in->pieces, sizeof(out->pieces));
@@ -23,24 +20,100 @@ void copy_board(struct board* out, struct board* in) {
 char get_piece_on_square(struct board* board, int square);
 
 void board_init(struct board* out) {
-    if (board_init_from_fen(out, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
+    if (!board_init_from_fen(out, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"))
         exit(1);
 }
 
-int board_npieces(struct board* board, char who) {
+int board_npieces(struct board* board, unsigned char who) {
     return bitmap_count_ones(board_friendly_occupancy(board, who));
 }
 
-void board_flip_side(struct board* board) {
+uint64_t board_flip_side(struct board* board, uint64_t enpassant) {
+    uint64_t old_enpassant = board->enpassant;
+    if (old_enpassant != 1) {
+        board->hash ^= enpassant_hash_codes[LSBINDEX(old_enpassant) % 8];
+    }
+    board->enpassant = enpassant;
+    if (enpassant != 1) {
+        board->hash ^= enpassant_hash_codes[LSBINDEX(enpassant) % 8];
+    }
     board->who = 1 - board->who;
     board->hash ^= side_hash_code;
+    return old_enpassant;
 }
 
 int move_equal(move_t m1, move_t m2) {
-    return (m1.square1 == m2.square2) && (m1.piece == m2.piece) && (m1.captured == m2.captured) && (m1.promotion == m2.promotion) && ((m1.misc & 0xc) == (m2.misc & 0xc));
+    return (m1.square1 == m2.square1) && (m1.square2 == m2.square2) &&(m1.piece == m2.piece) && (m1.captured == m2.captured) && (m1.promotion == m2.promotion) && ((m1.misc & 0xc) == (m2.misc & 0xc));
 }
 
-int board_init_from_fen(struct board* out, char* position) {
+void board_to_fen(struct board* board, char* fen) {
+    int i, j;
+    int counter;
+    for (i = 7; i >= 0; i--) {
+        counter = 0;
+        for (j = 0; j < 8; j++) {
+            char piece = get_piece_on_square(board, 8*i+j);
+            if (piece == -1) counter++;
+            else {
+                if (counter > 0) {
+                    *(fen++) = '0' + counter;
+                    counter = 0;
+                }
+                *(fen++) = piece_names[piece];
+            }
+        }
+        if (counter > 0) {
+            *(fen++) = '0' + counter;
+            counter = 0;
+        }
+        *(fen++) = '/';
+    }
+    *(fen - 1) = ' ';
+
+    if (board->who)
+        *(fen++) = 'b';
+    else
+        *(fen++) = 'w';
+
+    *(fen++) = ' ';
+
+    int seen = 0;
+    if (board->cancastle & 0x4) {
+        *(fen++) = 'K';
+        seen = 1;
+    }
+    if (board->cancastle & 0x8) {
+        *(fen++) = 'Q';
+        seen = 1;
+    }
+    if (board->cancastle & 0x1) {
+        *(fen++) = 'k';
+        seen = 1;
+    }
+    if (board->cancastle & 0x2) {
+        *(fen++) = 'q';
+        seen = 1;
+    }
+    if (!seen)
+        *(fen++) = '-';
+
+    *(fen++) = ' ';
+
+    if (board->enpassant != 1) {
+        int file = LSBINDEX(board->enpassant) % 8;
+        int rank = LSBINDEX(board->enpassant) / 8;
+        if (rank == 3) rank = 2;
+        else if (rank == 4) rank = 5;
+        *(fen++) = 'a' + file;
+        *(fen++) = '1' + rank;
+    } else {
+        *(fen++) = '-';
+    }
+    *(fen++) = ' ';
+    sprintf(fen, "%d %d", board->nmovesnocapture, board->nmoves/2+1);
+}
+
+char* board_init_from_fen(struct board* out, char* position) {
     /* Format of position:
      * r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -
      */
@@ -60,7 +133,7 @@ int board_init_from_fen(struct board* out, char* position) {
         P2BM(out, i) = 0;
 
     while (*position) {
-        if (rank > 7 || rank < 0 || file > 7 || file < 0) return 1;
+        if (rank > 7 || rank < 0 || file > 7 || file < 0) return NULL;
         square = 8 * rank + file;
         mask = 1ull << square;
         switch (*position) {
@@ -105,7 +178,7 @@ int board_init_from_fen(struct board* out, char* position) {
             default:
                 n = *position - '0';
                 if (n < 0 || n > 9) {
-                    return 1;
+                    return NULL;
                 }
                 file += n - 1;
         }
@@ -119,9 +192,9 @@ int board_init_from_fen(struct board* out, char* position) {
         position++;
     }
 
-    if (*position == 0) return 1;
+    if (*position == 0) return NULL;
 
-    if (*(++position) != ' ') return 1;
+    if (*(++position) != ' ') return NULL;
     position++;
 
     if (*position == 'w')
@@ -130,9 +203,9 @@ int board_init_from_fen(struct board* out, char* position) {
         out->who = 1;
         out->hash ^= side_hash_code;
     } else
-        return 1;
+        return NULL;
 
-    if (*(++position) != ' ') return 1;
+    if (*(++position) != ' ') return NULL;
     position++;
 
     while (*position) {
@@ -156,15 +229,17 @@ int board_init_from_fen(struct board* out, char* position) {
             case '-':
                 break;
             default:
-                return 1;
+                return NULL;
         }
         if (*(++position) == ' ') break;
     }
-    if (*position == 0) return 1;
+    if (*position == 0) return NULL;
     position++;
-    if (*position == 0) return 1;
+    if (*position == 0) return NULL;
+
+    out->enpassant = 1;
     if (*position != '-') {
-        if (*(position + 1) == 0) return 1;
+        if (*(position + 1) == 0) return NULL;
         int rank, file;
         file = *position - 'a';
         rank = *position - '1';
@@ -175,11 +250,11 @@ int board_init_from_fen(struct board* out, char* position) {
         position++;
     }
 
-    if (*(++position) != ' ') return 1;
+    if (*(++position) != ' ') return NULL;
     position++;
     int a, b;
     if (sscanf(position, "%d %d", &a, &b) < 2)
-        return 1;
+        return NULL;
 
     out->nmovesnocapture = a;
     out->nmoves = 2 * (b - 1) + out->who;
@@ -191,7 +266,9 @@ int board_init_from_fen(struct board* out, char* position) {
         }
     }
 
-    return 0;
+    while (*position && *(position++) != ' ');
+    while (*position && *(position++) != ' ');
+    return position;
 }
 
 char get_piece_on_square(struct board* board, int square) {
@@ -242,28 +319,28 @@ int algebraic_to_move(char* input, struct board* board, struct delta* move) {
 
     move->piece = piece1;
     move->promotion = move->piece;
+
+    if (piece1 == KING) {
+        if (file1 - file2 < 1 || file1 - file2 > 1)
+            move->misc |= 0x80;
+    }
     
     if (input[4] != 0) {
-        if (input[4] == 'C') {
-            move->misc |= 0x80;
-        }
-        else {
-            switch (input[4]) {
-                case 'R':
-                    move->promotion = ROOK;
-                    break;
-                case 'N':
-                    move->promotion = KNIGHT;
-                    break;
-                case 'B':
-                    move->promotion = BISHOP;
-                    break;
-                case 'Q':
-                    move->promotion = QUEEN;
-                    break;
-                default:
-                    return -1;
-            }
+        switch (input[4]) {
+            case 'r':
+                move->promotion = ROOK;
+                break;
+            case 'n':
+                move->promotion = KNIGHT;
+                break;
+            case 'b':
+                move->promotion = BISHOP;
+                break;
+            case 'q':
+                move->promotion = QUEEN;
+                break;
+            default:
+                return -1;
         }
     }
 
@@ -280,36 +357,9 @@ void move_to_algebraic(struct board* board, char* buffer, struct delta* move) {
     buffer[2] = 'a' + file2;
     buffer[3] = '1' + rank2;
     buffer[4] = 0;
-    if (move->misc & 0x80) {
-        buffer[4] = 'C';
-        if (file2 == 2)
-            buffer[5] = 'a';
-        else
-            buffer[5] = 'h';
-        buffer[6] = '1' + rank2;
-        buffer[7] = 0;
-    }
     if (move->promotion != move->piece) {
-        switch (move->promotion) {
-            case PAWN:
-                buffer[4] = 'P';
-                break;
-            case KNIGHT:
-                buffer[4] = 'N';
-                break;
-            case BISHOP:
-                buffer[4] = 'B';
-                break;
-            case ROOK:
-                buffer[4] = 'R';
-                break;
-            case QUEEN:
-                buffer[4] = 'Q';
-                break;
-            case KING:
-                buffer[4] = 'K';
-                break;
-        }
+        printf("%d, %d\n", move->piece, move->promotion);
+        buffer[4] = piece_names[6 + move->promotion];
         buffer[5] = 0;
     }
 }
@@ -365,18 +415,18 @@ uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occu
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
 
-int is_valid_move(struct board* board, char who, struct delta move) {
+int is_valid_move(struct board* board, unsigned char who, struct delta move) {
     struct deltaset mvs;
     generate_moves(&mvs, board, who);
     int i;
     for (i = 0; i < mvs.nmoves; i++) {
         if (move_equal(mvs.moves[i], move))
-            return 0;
+            return 1;
     }
-    return 1;
+    return 0;
 }
 
-int apply_move(struct board* board, char who, struct delta* move) {
+int apply_move(struct board* board, unsigned char who, struct delta* move) {
     uint64_t hupdate = side_hash_code;
     move->enpassant = LSBINDEX(board->enpassant);
     move->cancastle = board->cancastle;
@@ -461,7 +511,7 @@ int apply_move(struct board* board, char who, struct delta* move) {
     return 0;
 }
 
-int reverse_move(struct board* board, char who, move_t* move) {
+int reverse_move(struct board* board, unsigned char who, move_t* move) {
     board->enpassant = (1ull << move->enpassant);
     board->who = 1 - board->who;
 
@@ -487,7 +537,7 @@ int reverse_move(struct board* board, char who, move_t* move) {
     }
     // Handle castling
     if (move->misc & 0x80) {
-        board->castled &= ~(1 << (1-who));
+        board->castled &= ~(1 << who);
         int rank2 = move->square2 / 8;
         int file2 = move->square2 % 8;
         if (file2 == 2) {
@@ -505,7 +555,7 @@ int reverse_move(struct board* board, char who, move_t* move) {
  * MOVE GENERATION CODE
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-uint64_t attacked_squares(struct board* board, char who, uint64_t occ) {
+uint64_t attacked_squares(struct board* board, unsigned char who, uint64_t occ) {
     // All attacked squares, disregarding check, along with protections
     uint64_t attack = 0;
     uint64_t temp;
@@ -532,25 +582,24 @@ uint64_t attacked_squares(struct board* board, char who, uint64_t occ) {
     return attack;
 }
 
-uint64_t board_friendly_occupancy(struct board* board, char who) {
+uint64_t board_friendly_occupancy(struct board* board, unsigned char who) {
     return board->pieces[who][PAWN] | board->pieces[who][KNIGHT] | board->pieces[who][BISHOP] | board->pieces[who][ROOK] | board->pieces[who][QUEEN] | board->pieces[who][KING];
 }
 
-uint64_t board_enemy_occupancy(struct board* board, char who) {
+uint64_t board_enemy_occupancy(struct board* board, unsigned char who) {
     return board->pieces[1-who][PAWN] | board->pieces[1-who][KNIGHT] | board->pieces[1-who][BISHOP] | board->pieces[1-who][ROOK] | board->pieces[1-who][QUEEN] | board->pieces[1-who][KING];
 }
 
-int board_nmoves_accurate(struct board* board, char who) {
+int board_nmoves_accurate(struct board* board, unsigned char who) {
     struct deltaset mvs;
     generate_moves(&mvs, board, who);
     return mvs.nmoves;
 }
 
-int deltaset_add_move(struct board* board, char who, struct deltaset * out, int piece, int square1, uint64_t attacks, uint64_t friendly, uint64_t enemy) {
+static void deltaset_add_move(struct board* board, unsigned char who, struct deltaset * out, int piece, int square1, uint64_t attacks, uint64_t friendly, uint64_t enemy) {
     uint64_t temp;
-    uint64_t mask1, mask2, checkers;
+    uint64_t mask1, mask2;
     int square2;
-    int pinsq, pintmp;;
     mask1 = 1ull << square1;
     int i = out->nmoves;
     int k;
@@ -613,7 +662,7 @@ int deltaset_add_move(struct board* board, char who, struct deltaset * out, int 
     out->nmoves = i;
 }
 
-void deltaset_add_castle(struct deltaset *out, int square1, int square2) {
+static void deltaset_add_castle(struct deltaset *out, int square1, int square2) {
     int i = out->nmoves;
     out->moves[i].misc = 0x80;
     out->moves[i].enpassant = 0;
@@ -626,14 +675,14 @@ void deltaset_add_castle(struct deltaset *out, int square1, int square2) {
     out->nmoves += 1;
 }
 
-void generate_moves(struct deltaset* mvs, struct board* board, char who) {
+void generate_moves(struct deltaset* mvs, struct board* board, unsigned char who) {
     // Generate pseudo-legal moves
     // Some pins against the king will be disregarded, but
     // picked up next cycle
     uint64_t temp, square;
     uint64_t attack, opponent_attacks;
     uint64_t friendly_occupancy, enemy_occupancy;
-    uint64_t check, nopiececheck;
+    uint64_t check;
     register uint64_t mask;
 
     // uint64_t pinned, bishop_pinners, rook_pinners;
@@ -671,6 +720,8 @@ void generate_moves(struct deltaset* mvs, struct board* board, char who) {
     mvs->pinned = friendly_occupancy & pinned;
 
     opponent_attacks = attacked_squares(board, 1-who, enemy_occupancy | (friendly_occupancy ^ king));
+
+    mvs->opponent_attacks = opponent_attacks;
 
     check = is_in_check(board, who, friendly_occupancy, enemy_occupancy);
     check_count = (check != 0);

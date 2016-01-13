@@ -36,7 +36,7 @@ struct board {
     char cancastle; // Castling priviledge
     uint64_t hash;
     char castled;
-    char who;
+    unsigned char who;
 };
 
 #define CHECKMATE 30000
@@ -47,8 +47,8 @@ struct state;
 
 struct delta_compressed {
     // A reversible change to board
-    char square1;
-    char square2;
+    unsigned char square1;
+    unsigned char square2;
     char piece;
     char captured;
 
@@ -61,8 +61,8 @@ struct delta_compressed {
 
 struct delta {
     // A reversible change to board
-    char square1;
-    char square2;
+    unsigned char square1;
+    unsigned char square2;
     char piece;
     char captured;
 
@@ -75,6 +75,15 @@ struct delta {
     uint64_t hupdate;
 };
 
+/* TODO
+ * We can make this more compact as follows:
+ * 5 byte hash (upper 5 bytes)
+ * 1 byte type, including valid bit
+ * 2 byte score
+ * 6 byte move (square1, square2, piece, captured, promotion, misc)
+ * 1 byte age
+ * 1 byte depth
+ */
 struct transposition {
     uint64_t hash;
     int16_t score;
@@ -83,6 +92,8 @@ struct transposition {
     int16_t age;
     int16_t depth;
     struct delta_compressed move;
+    // Make the size of each entry divide 64 for cache performance
+    uint64_t padding;
 };
 
 struct opening_entry {
@@ -94,7 +105,7 @@ struct opening_entry {
 };
 
 void transposition_table_update(struct transposition* update);
-int transposition_table_read(uint64_t hash, struct transposition* value);
+int transposition_table_read(uint64_t hash, struct transposition** value);
 
 typedef struct delta move_t;
 
@@ -102,29 +113,31 @@ struct deltaset {
     move_t moves[256];
     short nmoves;
     char check;
-    char who;
+    unsigned char who;
     uint64_t pinned; // a bitmap of all pinned pieces
+    uint64_t opponent_attacks;
 };
 
 /* Board functions */
 void board_init(struct board* board);
-int board_init_from_fen(struct board* out, char* position);
-int board_score(struct board* board, char who, struct deltaset* mvs, int nmoves);
+char * board_init_from_fen(struct board* out, char* position);
+void board_to_fen(struct board* out, char* fen);
+int board_score(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta);
 
-int board_npieces(struct board* out, char who);
+int board_npieces(struct board* out, unsigned char who);
 
-int apply_move(struct board* board, char who, struct delta* move);
-int reverse_move(struct board* board, char who, move_t* move);
+int apply_move(struct board* board, unsigned char who, struct delta* move);
+int reverse_move(struct board* board, unsigned char who, move_t* move);
 
 int algebraic_to_move(char* input, struct board* board, move_t* move);
 void move_to_algebraic(struct board* board, char* buffer, struct delta* move);
 
-void generate_moves(struct deltaset* mvs, struct board* board, char who);
+void generate_moves(struct deltaset* mvs, struct board* board, unsigned char who);
 
-uint64_t board_friendly_occupancy(struct board* board, char who);
-uint64_t board_enemy_occupancy(struct board* board, char who);
+uint64_t board_friendly_occupancy(struct board* board, unsigned char who);
+uint64_t board_enemy_occupancy(struct board* board, unsigned char who);
 
-int board_nmoves_accurate(struct board* board, char who);
+int board_nmoves_accurate(struct board* board, unsigned char who);
 uint64_t is_in_check(struct board* board, int who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 
@@ -132,8 +145,9 @@ uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occu
 int move_equal(move_t m1, move_t m2);
 
 
-int is_valid_move(struct board* board, char who, struct delta move);
-void board_flip_side(struct board* board);
+char get_piece_on_square(struct board* board, int square);
+int is_valid_move(struct board* board, unsigned char who, struct delta move);
+uint64_t board_flip_side(struct board* board, uint64_t enpassant);
 
 
 int position_count_table_read(uint64_t hash);
@@ -143,6 +157,6 @@ int opening_table_read(uint64_t hash, move_t* move);
 void opening_table_update(uint64_t hash, move_t move, char avoid);
 void save_opening_table(char * fname);
 
-uint64_t attacked_squares(struct board* board, char who, uint64_t occ);
+uint64_t attacked_squares(struct board* board, unsigned char who, uint64_t occ);
 
 #endif
