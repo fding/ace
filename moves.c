@@ -374,7 +374,6 @@ uint64_t attack_set_queen(int square, uint64_t friendly_occupancy, uint64_t enem
     return attack_set_rook(square, friendly_occupancy, enemy_occupancy) | attack_set_bishop(square, friendly_occupancy, enemy_occupancy);
 }
 
-
 uint64_t xray_rook_attacks(int square, uint64_t occ, uint64_t blockers) {
    uint64_t attacks = attack_set_rook(square, 0, occ);
    blockers &= attacks;
@@ -386,4 +385,3 @@ uint64_t xray_bishop_attacks(int square, uint64_t occ, uint64_t blockers) {
    blockers &= attacks;
    return (attacks ^ attack_set_bishop(square, 0, occ ^ blockers)) | blockers;
 }
-

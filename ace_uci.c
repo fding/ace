@@ -4,15 +4,15 @@
 #include "ace.h"
 
 int main() {
-    char *buffer = malloc(2048);
-    int n;
-    memset(buffer, 0, 2048);
+    char *buffer = malloc(4046);
+    size_t n;
+    memset(buffer, 0, 4096);
     FILE * f = fopen("log.txt", "a");
     while (getline(&buffer, &n, stdin) > 0) {
         fprintf(f, "%s", buffer);
         fflush(f);
         n = strlen(buffer);
-        if (n > 2048) exit(1);
+        if (n > 4096) exit(1);
         buffer[n - 1] = 0;
         char * token;
         token = strtok(buffer, " ");
@@ -65,11 +65,14 @@ int main() {
                 if (!token) break;
                 if (strcmp(token, "moves") != 0) break;
                 while ((token = strtok(NULL, " "))) {
-                    engine_move(token);
+                    if (engine_move(token))
+                        fprintf(stderr, "Bad move: %s\n", token);
+                    engine_print();
                 }
                 break;
             }
             else if (strcmp(token, "go") == 0) {
+                engine_print();
                 token = strtok(NULL, " ");
                 if (token != NULL && strcmp(token, "ponder") == 0) break;
                 engine_play();
@@ -91,5 +94,7 @@ int main() {
 
             token = strtok(NULL, " ");
         }
+
+        fflush(stdout);
     }
 }

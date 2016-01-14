@@ -4,7 +4,7 @@ CFLAGS=-L. -O3 -Wall -Wno-char-subscripts -mpopcnt -mlzcnt
 all: libace.a chess perft benchmark init ace-uci
 
 generate_magic: generate_magic.c
-	$(CC) -o generate_magic generate_magic.c
+	$(CC) -O3 -o generate_magic generate_magic.c
 
 magic.c: generate_magic
 	./generate_magic > magic.c

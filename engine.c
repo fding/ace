@@ -134,38 +134,6 @@ void save_opening_table(char * fname) {
     fclose(file);
 }
 
-#define HASHMASK1 ((1ull << 26) - 1)
-#define HASHMASK2 (((1ull << 48) - 1) ^ HASHMASK1)
-
-void transposition_table_update(struct transposition * update) {
-    int hash1 = HASHMASK1 & update->hash;
-    if (transposition_table[hash1].valid) {
-        if (transposition_table[hash1].hash == update->hash) {
-            if (update->depth > transposition_table[hash1].depth)
-                transposition_table[hash1] = *update;
-            transposition_table[hash1].valid = update->valid;
-        } else {
-            transposition_table_size+=1;
-            if (transposition_table[hash1].depth < update->depth
-                    || transposition_table[hash1].age > update->age + 10)
-                transposition_table[hash1] = *update;
-        }
-    }
-    else {
-        transposition_table[hash1] = *update;
-        transposition_table_size+=1;
-    }
-}
-
-int transposition_table_read(uint64_t hash, struct transposition** value) {
-    int hash1 = HASHMASK1 & hash;
-    if (transposition_table[hash1].valid && transposition_table[hash1].hash == hash)
-    {
-        *value = &transposition_table[hash1];
-        return 0;
-    }
-    return -1;
-}
 
 void engine_init(int max_thinking_time, char flags) {
     engine_init_from_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", max_thinking_time, flags);
@@ -188,6 +156,7 @@ char* engine_init_from_position(char* position, int max_thinking_time, char flag
         if (flags & FLAGS_USE_OPENING_TABLE)
             load_opening_table("openings.acebase");
     }
+    memset(position_count_table, 0, sizeof(position_count_table));
     pos = board_init_from_fen(&global_state.curboard, position);
     global_state.current_side = global_state.curboard.who;
     global_state.side = 0;
@@ -255,8 +224,9 @@ static int engine_move_internal(move_t move) {
     if (global_state.won) return global_state.won;
     if (is_valid_move(&global_state.curboard, global_state.current_side, move))
         apply_move(&global_state.curboard, global_state.current_side, &move);
-    else
+    else {
         return -1;
+    }
 
     position_count_table_update(global_state.curboard.hash);
     if (position_count_table_read(global_state.curboard.hash) >= 4) {
@@ -269,7 +239,7 @@ static int engine_move_internal(move_t move) {
     global_state.current_side = 1-global_state.current_side;
 
     generate_moves(&mvs, &global_state.curboard, global_state.current_side);
-    int nmoves = board_nmoves_accurate(&global_state.curboard, global_state.current_side);
+    int nmoves = mvs.nmoves;
 
     if (mvs.check && nmoves == 0) 
         global_state.won = 3 - global_state.current_side;
@@ -295,7 +265,7 @@ int engine_play() {
 
     clock_t start = clock();
 
-    move_t move = generate_move(&global_state.curboard, global_state.current_side, global_state.max_thinking_time, global_state.flags);
+    move_t move = find_best_move(&global_state.curboard, global_state.current_side, global_state.max_thinking_time, global_state.flags);
     char buffer[8];
     move_to_algebraic(&global_state.curboard, buffer, &move);
     if (global_state.flags & FLAGS_UCI_MODE) 
