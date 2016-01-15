@@ -132,6 +132,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 int apply_move(struct board* board, unsigned char who, struct delta* move);
 int reverse_move(struct board* board, unsigned char who, move_t* move);
 void generate_moves(struct deltaset* mvs, struct board* board, unsigned char who);
+void generate_captures(struct deltaset* mvs, struct board* board, unsigned char who);
 int is_valid_move(struct board* board, unsigned char who, struct delta move);
 uint64_t board_flip_side(struct board* board, uint64_t enpassant);
 

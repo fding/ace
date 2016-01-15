@@ -14,6 +14,8 @@
 #define RANK7 0x00ff000000000000ull
 #define RANK8 0xff00000000000000ull
 
+#define UNDEFENDED
+
 static int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs);
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
@@ -50,8 +52,8 @@ int pawn_table_endgame[64] = {
 int knight_table[64] = {
     -20, -15, -15, -15, -15, -15, -15, -20,
      0,  10,  10,  10,  10,  10,  10,  0,
-     0,  10,  20,  20,  20,  20,  10,  0,
-    -10, 0,  20,  30,  30,  20, 0, -10,
+     0,  10,  30,  40,  40,  30,  10,  0,
+    -10, 0,  25,  35,  35,  25, 0, -10,
     -10, 0,  20,  30,  30,  20, 0, -10,
     -15, 0,  15,  15,  15,  15, 0, -15,
     -20, -10, -10, -10, -10, -10, -10, -20,
@@ -155,7 +157,6 @@ int material_for_player(struct board* board, unsigned char who) {
  *  1. Endgame table
  *  2. Finer material nuances, like material hash table
  */
-#define UNDEFENDED
 int board_score(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta) {
     int rank, file;
 
@@ -267,7 +268,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 #endif
             // doubled pawns are bad
             if ((AFILE << file)  & (pawns[w] ^ (1ull << square)))
-                subscore -= 15;
+                subscore -= 20;
             // passed pawns are good
             if (!((AFILE << square) & pawns[1 - w])) {
                 if (w)
@@ -375,7 +376,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
                 subscore -= 50;
 #endif
         }
-        bmloop(P2BM(board, WHITEQUEEN), square, temp) {
+        bmloop(P2BM(board, 6 * w + QUEEN), square, temp) {
             file = square & 0x7;
             int loc = (w == 0) ? (56 - square + file + file) : square;
             subscore += queen_table[loc];
@@ -450,18 +451,12 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
         else score += subscore;
     }
 
-    // Trading down is good for the side with more material
-    if (whitematerial - blackmaterial > 0)
-        score += (4006 - blackmaterial) / 8;
-    else if (whitematerial - blackmaterial < 0)
-        score -= (4006 - whitematerial) / 8;
-
     // castling is almost always awesome
     score += (board->castled & 1) * 75 - ((board->castled & 2) >> 1) * 75;
     score += ((board->cancastle & 12) != 0) * 25 - ((board->cancastle & 3) != 0 ) * 25;
 
     // the side with more options is better
-    score += (bitmap_count_ones(attacks[0]) - bitmap_count_ones(attacks[1])) * 8;
+    score += (bitmap_count_ones(attacks[0]) - bitmap_count_ones(attacks[1])) * 16;
 
     return score;
 }
@@ -727,13 +722,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     }
 
     score += (whitematerial - blackmaterial);
-
-    // Trading down is good for the side with more material
-    // TODO: Be careful when trading down to avoid draws!
-    if (whitematerial - blackmaterial > 0)
-        score += (4006 - blackmaterial) / 16;
-    else if (whitematerial - blackmaterial < 0)
-        score -= (4006 - whitematerial) / 16;
 
     int winning_side = 1;
     if (whitematerial > blackmaterial)

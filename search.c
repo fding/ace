@@ -64,9 +64,9 @@ int history[2][64][64];
 
 static int sort_deltaset(struct board* board, char who, struct deltaset* set, move_t* tablemove);
 int search(struct board* board, move_t* best, int depth, int alpha, int beta,
-        int capturemode, int nullmode, char who);
+        int nullmode, char who);
 static int try_move(struct board* board, move_t* move, move_t* best, struct transposition* trans,
-        int depth, int* alpha, int beta, int capturemode, int nullmode, char* pvariation, char who);
+        int depth, int* alpha, int beta, int nullmode, char* pvariation, char who);
 
 static int transposition_table_search(struct board* board, int depth, move_t* best, move_t* move,
         int * alpha, int beta);
@@ -157,6 +157,7 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
     insertion_sort(set->moves, scores, 0, set->nmoves);
 
     int start = k;
+    int ts;
     for (i = k; i < set->nmoves; i++) {
         if (set->moves[i].captured != -1 || 
                 (set->moves[i].piece == PAWN && set->moves[i].promotion != PAWN)) {
@@ -166,10 +167,15 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
             move_copy(&set->moves[i], &temp);
         }
     }
-
-    int ncaptures = k;
-
     insertion_sort(set->moves, scores, start, k);
+
+    for (i = start; i < k; i++) {
+        if (scores[i] < 0) break;
+    }
+
+    int ncaptures = i;
+    k = i;
+
     // Killer moves
     for (i = k; i < set->nmoves; i++) {
         if (move_equal(set->moves[i], killer[ply].m1)) {
@@ -189,11 +195,7 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
     }
 
     for (i = k; i < set->nmoves; i++) {
-        assert(history[who][set->moves[i].square1][set->moves[i].square2] >= 0);
         scores[i] = history[who][set->moves[i].square1][set->moves[i].square2];
-        if (((1ull << set->moves[i].square1) & set->opponent_attacks) &&
-            !((1ull << set->moves[i].square2) & set->opponent_attacks))
-            scores[i] += material_table[set->moves[i].piece] * 2;
     }
     insertion_sort(set->moves, scores, k, set->nmoves);
     return ncaptures;
@@ -219,26 +221,24 @@ static int is_checkmate(int score) {
 }
 
 static int try_move(struct board* board, move_t* restrict move, move_t* restrict best, struct transposition* trans,
-        int depth, int* alpha, int beta, int capturemode, int nullmode, char* pvariation, char who) {
+        int depth, int* alpha, int beta, int nullmode, char* pvariation, char who) {
     move_t temp;
     apply_move(board, who, move);
     int s;
-    if (capturemode || *pvariation || ply == 1) {
-        s = -search(board, &temp, depth - 10, -beta, -(*alpha), capturemode, nullmode, 1 - who);
+    if (*pvariation || ply == 1) {
+        s = -search(board, &temp, depth - 10, -beta, -(*alpha), nullmode, 1 - who);
     } else {
-        s = -search(board, &temp, depth - 10, -(*alpha) - 1, -(*alpha), capturemode, nullmode, 1 - who);
+        s = -search(board, &temp, depth - 10, -(*alpha) - 1, -(*alpha), nullmode, 1 - who);
         if (!out_of_time && s >= *alpha && s < beta)
-            s = -search(board, &temp, depth - 10, -beta, -(*alpha), capturemode, nullmode, 1 - who);
+            s = -search(board, &temp, depth - 10, -beta, -(*alpha), nullmode, 1 - who);
     }
     reverse_move(board, who, move);
     if (*alpha < s) {
         *alpha = s;
         *best = *move;
-        if (!capturemode) {
-            move_copy(&trans->move, move);
-            trans->type = EXACT | MOVESTORED;
-            trans->score = s;
-        }
+        move_copy(&trans->move, move);
+        trans->type = EXACT | MOVESTORED;
+        trans->score = s;
         *pvariation = 0;
         history[who][move->square1][move->square2] += depth / 8;
     }
@@ -246,11 +246,9 @@ static int try_move(struct board* board, move_t* restrict move, move_t* restrict
         beta_cutoff_count += 1;
         if (move->captured == -1)
             update_killer(ply, move);
-        if (!capturemode) {
-            move_copy(&trans->move, move);
-            trans->type = BETA_CUTOFF | MOVESTORED;
-            trans->score = s;
-        }
+        move_copy(&trans->move, move);
+        trans->type = BETA_CUTOFF | MOVESTORED;
+        trans->score = s;
         return 0;
     }
     if (out_of_time) return 0;
@@ -261,7 +259,7 @@ static int transposition_table_search(struct board* board, int depth, move_t* be
     struct transposition * stored;
     int score;
     move->piece = -1;
-    if (transposition_table_read(board->hash, &stored) == 0 && position_count_table_read(board->hash) < 1) {
+    if (transposition_table_read(board->hash, &stored) == 0 && position_count_table_read(board->hash) < 1 && ply > 1) {
         score = transform_checkmate(board, stored);
         if (stored->depth >= depth) {
             if ((stored->type & EXACT)) {
@@ -286,11 +284,120 @@ static int transposition_table_search(struct board* board, int depth, move_t* be
     return -1;
 }
 
+int qsearch(struct board* board, int depth, int alpha, int beta, char who) {
+    beta_cutoff_count += 1;
+    branches += 1;
+    alpha = MAX(alpha, -CHECKMATE + board->nmoves);
+    beta = MIN(beta, CHECKMATE - board->nmoves - 1);
+    if (alpha >= beta) return alpha;
+
+    struct deltaset out;
+    move_t temp;
+    int score = 0;
+    int i = 0;
+    struct transposition * stored;
+
+    // Check if we are out of time. If so, abort
+    if (clock() - start > max_thinking_time) {
+        out_of_time = 1;
+        return 0;
+    }
+
+    move_t tablemove;
+    move_t best;
+
+    int nmoves = 0;
+    generate_captures(&out, board, who);
+    struct deltaset out1;
+    nmoves = out.nmoves;
+
+    // For quiescent search mode, initialize alpha to be the static score
+    // Score the node using the transposition table if posible,
+    // and if not, using the static evaluation function
+    if (transposition_table_read(board->hash, &stored) == 0) {
+        score = transform_checkmate(board, stored);
+        if (!(stored->type & EXACT) && !((stored->type & ALPHA_CUTOFF) && score <= alpha) &&
+             !((stored->type & BETA_CUTOFF) && score >=beta)) {
+            score = board_score(board, who, &out, alpha, beta);
+            if (who) score = -score;
+        }
+    } else {
+        score = board_score(board, who, &out, alpha, beta);
+        if (who) score = -score;
+    }
+    int initial_score = score;
+    alpha = MAX(alpha, score);
+
+    // Terminal condition: no more moves are left, or we run out of depth
+    if (depth < 10 || nmoves == 0) {
+        return score;
+    }
+
+    // Look in the transposition table to see if we have seen the position before,
+    // and if so, return the score if possible.
+    // Even if we can't return the score due to lack of depth,
+    // the stored move is probably good, so we can improve the pruning
+    int res = transposition_table_search(board, depth, &best, &tablemove, &alpha, beta);
+    if (res == 0) {
+        return alpha;
+    }
+
+    sort_deltaset(board, who, &out, &tablemove);
+
+    int value = 0;
+    int delta_cutoff = 350;
+    for (i = 0; i < out.nmoves; i++) {
+        // Delta-pruning for quiescent search:
+        // If after we capture and don't allow the opponent to respond and we're still more than a minor piece
+        // worse than alpha, this capture must really suck, so no need to consider it.
+        // We never prune if we are in check, because that could easily result in mistaken evaluation
+        if (!out.check) {
+            if (out.moves[i].captured != -1 ||
+                    out.moves[i].promotion != out.moves[i].piece) {
+                // Don't consider bad captures
+                value = move_see(board, &out, &out.moves[i]);
+                if (value < 0)
+                    continue;
+                value += initial_score;
+                if (value >= beta) {
+                    alpha = value;
+                    return alpha;
+                }
+                if (value + delta_cutoff < alpha) {
+                    continue;
+                }
+                if (alpha < value) {
+                    alpha = value;
+                }
+            } else {
+                // After depth 30 (i.e. 9 plies of capture mode), restrict to captures only
+                if (depth <= 30)
+                    continue;
+            }
+            if (out.moves[i].captured != -1 && depth <= 20) {
+                // Don't consider bad captures
+                // TODO: what happens if we end up skipping all legal moves? Should it trigger alpha cutoff?
+                if (move_see(board, &out, &out.moves[i]) < 0)
+                    break;
+            }
+        }
+
+        apply_move(board, who, &out.moves[i]);
+        score = -qsearch(board, depth - 10, -beta, -alpha, 1 - who);
+        reverse_move(board, who, &out.moves[i]);
+        if (alpha < score) {
+            alpha = score;
+        }
+        if (beta <= alpha) {
+            return alpha;
+        }
+    }
+    return alpha;
+}
+
+
 int search(struct board* board, move_t* best,
-        int depth, int alpha, int beta, int capturemode, int nullmode, char who) {
-    int ai, bi;
-    ai = alpha;
-    bi = beta;
+        int depth, int alpha, int beta, int nullmode, char who) {
     if (ply != 0) {
         alpha = MAX(alpha, -CHECKMATE + board->nmoves);
         beta = MIN(beta, CHECKMATE - board->nmoves - 1);
@@ -304,7 +411,6 @@ int search(struct board* board, move_t* best,
     int i = 0;
     char pvariation = 1;
     branches += 1;
-    struct transposition * stored;
 
     // Mark it as invalid, in case we return prematurely (due to time limit)
     best->piece = -1; 
@@ -340,54 +446,25 @@ int search(struct board* board, move_t* best,
 
     // Terminal condition: no more moves are left, or we run out of depth
     if (depth < 10 || nmoves == 0) {
-        // Score the node using the transposition table if posible,
-        // and if not, using the static evaluation function
-        if (transposition_table_read(board->hash, &stored) == 0) {
-            score = transform_checkmate(board, stored);
-            if (!(stored->type & EXACT) && !((stored->type & ALPHA_CUTOFF) && score <= alpha) &&
-                 !((stored->type & BETA_CUTOFF) && score >=beta)) {
-                score = board_score(board, who, &out, alpha, beta);
-                if (who) score = -score;
-            }
-        } else {
+        if (nmoves == 0) {
             score = board_score(board, who, &out, alpha, beta);
             if (who) score = -score;
-        }
-
-        if (nmoves == 0 || capturemode) {
             ply--;
             return score;
         }
-
-        if (!capturemode) {
-            // If we haven't entered quiescent search mode, do so now.
-            // We add a lot of extra depth, but we only consider captures and check giving moves
-            depth += 120;
-            capturemode = 1;
-        } else {
-            ply--;
-            return score;
-        }
+        ply--;
+        score = qsearch(board, 300, alpha, beta, who);
+        return score;
     }
 
-    if (out.check) depth += 5;
+    if (out.check) depth += 6;
     
     transposition.depth = depth;
 
     int initial_score = 0;
+    initial_score = board_score(board, who, &out, alpha, beta);
+    if (who) initial_score = -initial_score;
 
-    // For quiescent search mode, initialize alpha to be the static score
-    if (capturemode) {
-        score = board_score(board, who, &out, alpha, beta);
-        if (who) score = -score;
-        if (score >= beta && !out.check) {
-            ply--;
-            return score;
-        }
-        initial_score = score;
-        if (score > alpha)
-            alpha = score;
-    }
     move_t tablemove;
 
     // Look in the transposition table to see if we have seen the position before,
@@ -403,10 +480,9 @@ int search(struct board* board, move_t* best,
     // If we skip a move, and the move is still bad for the oponent,
     // then our move must have been great
     // We check if we have at least 5 pieces. Otherwise, we might encounter zugzwang
-    if (depth >= 20 && nullmode == 0 && !capturemode && !out.check && board_npieces(board, who) > 4) {
+    if (depth >= 20 && nullmode == 0 && !out.check && board_npieces(board, who) > 4) {
         uint64_t old_enpassant = board_flip_side(board, 1);
-        score = -search(board, &temp, depth - 30, -beta, -beta+1,
-                0, 1, 1 - who);
+        score = -search(board, &temp, depth - 30, -beta, -beta+1, 1, 1 - who);
         board_flip_side(board, old_enpassant);
         board->enpassant = old_enpassant;
         if (score >= beta) {
@@ -416,84 +492,51 @@ int search(struct board* board, move_t* best,
     }
 
     // Internal iterative depening
-    if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 50 && !capturemode && !nullmode) {
+    if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 50 && !nullmode) {
         alpha_cutoff_count += 1;
-        search(board, &tablemove, depth - 20, alpha, beta, capturemode, nullmode, who);
+        search(board, &tablemove, depth - 20, alpha, beta, nullmode, who);
     }
 
     int ncaptures = sort_deltaset(board, who, &out, &tablemove);
 
     int value = 0;
     int delta_cutoff = 350;
-    for (i = 0; i < ncaptures; i++) {
+    for (i = 0; i < out.nmoves; i++) {
         // Delta-pruning for quiescent search:
         // If after we capture and don't allow the opponent to respond and we're still more than a minor piece
         // worse than alpha, this capture must really suck, so no need to consider it.
         // We never prune if we are in check, because that could easily result in mistaken evaluation
-        if (capturemode && !out.check) {
-            if (out.moves[i].captured != -1 ||
-                    out.moves[i].promotion != out.moves[i].piece) {
-                // Don't consider bad captures
-                value = move_see(board, &out, &out.moves[i]);
-                if (value < 0)
-                    continue;
-                value += initial_score;
-                if (value >= beta) {
-                    alpha = value;
-                    goto CLEANUP1;
-                }
-                if (value + delta_cutoff < alpha) {
-                    continue;
-                }
-                if (alpha < value) {
-                    alpha = value;
-                }
-            } else {
-                // After depth 30 (i.e. 9 plies of capture mode), restrict to captures only
-                if (depth <= 30)
-                    continue;
-            }
-        }
         if (out.moves[i].captured != -1 && depth <= 20 && !out.check) {
             // Don't consider bad captures
             // TODO: what happens if we end up skipping all legal moves? Should it trigger alpha cutoff?
             if (move_see(board, &out, &out.moves[i]) < 0)
                 continue;
         }
-        if (!try_move(board, &out.moves[i], best, &transposition, depth, &alpha, beta, capturemode, nullmode, &pvariation, who))
-            goto CLEANUP1;
-    }
-    if (capturemode && !out.check) {
-        ply--;
-        return alpha;
-    }
-
-    // Futility pruning
-    // If we reach a frontier node, we don't need to consider non-captures and non-checks
-    // if the current score of the board is more than a minor piece less than alpha,
-    // because our move can only increase the positional scores,
-    // which is not that large of a factor
-    // TODO: more agressive pruning. If ply>7 and depth<=20, also prune with delta_cutoff=500
-    if ((depth <= 10 || (depth <= 20 && ply > 6))
-            && !out.check && alpha > -CHECKMATE/2 && beta < CHECKMATE/2 && nmoves > 6) {
-        initial_score = board_score(board, who, &out, alpha, beta);
-        if (who) initial_score = -initial_score;
-            // Futility pruning
-        int delta_cutoff = 300;
-        if (depth > 10) delta_cutoff = 500;
-        if (initial_score + delta_cutoff < alpha) {
-            ply--;
-            return initial_score + delta_cutoff;
+        // Futility pruning
+        // If we reach a frontier node, we don't need to consider non-winning captures and non-checks
+        // if the current score of the board is more than a minor piece less than alpha,
+        // because our move can only increase the positional scores,
+        // which is not that large of a factor
+        // TODO: more agressive pruning. If ply>7 and depth<=20, also prune with delta_cutoff=500
+        if (out.moves[i].captured == -1 && (depth <= 10 || (depth <= 20 && ply > 6))
+                && !out.check && alpha > -CHECKMATE/2 && beta < CHECKMATE/2 && nmoves > 6) {
+                // Futility pruning
+            if (initial_score >= beta && !out.check) {
+                continue;
+            }
+            int delta_cutoff = 300;
+            if (depth > 10) delta_cutoff = 500;
+            if (initial_score + delta_cutoff < alpha) {
+                continue;
+            }
         }
-    }
-
-    for (i = ncaptures; i < out.nmoves; i++) {
-        if (!try_move(board, &out.moves[i], best, &transposition, depth, &alpha, beta, capturemode, nullmode, &pvariation, who))
+        if (!try_move(board, &out.moves[i], best, &transposition, depth, &alpha, beta, nullmode, &pvariation, who))
             goto CLEANUP1;
     }
+
 CLEANUP1:
     ply--;
-    if (capturemode || out_of_time) return alpha;
+    if (out_of_time) return alpha;
     transposition_table_update(&transposition);
     return alpha;
 }
@@ -539,8 +582,7 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
         ply = 0;
         // Analyze this position so that when we leave the opening,
         // we have some entries in the transposition table
-        s = search(board, &temp, 60, alpha, beta,
-            0 /* Capture mode */, 0 /* null-mode */, 1 - who);
+        s = search(board, &temp, 60, alpha, beta, 0 /* null-mode */, 1 - who);
         reverse_move(board, who, &best);
     } else {
         move_t temp;
@@ -554,8 +596,7 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
 
         ply = 0;
         // A depth-4 search should always be accomplishable within the time limit
-        s = search(board, &best, 40, -INFINITY, INFINITY,
-            0 /* Capture mode */, 0 /* null-mode */, who);
+        s = search(board, &best, 40, -INFINITY, INFINITY, 0 /* null-mode */, who);
         prev_score[who] = s;
         temp = best;
         // Iterative deepening
@@ -569,8 +610,7 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
             int changeb = leeway_table[(d-60)/10];
             while (1) {
                 ply = 0;
-                s = search(board, &best, d, alpha, beta,
-                    0 /* Capture mode */, 0 /* null-mode */, who);
+                s = search(board, &best, d, alpha, beta, 0 /* null-mode */, who);
                 if (out_of_time) {
                     break;
                 }
@@ -587,8 +627,7 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
                 }
             }
             if (out_of_time) {
-                if (best.piece == -1)
-                    best = temp;
+                best = temp;
                 break;
             }
             else {
