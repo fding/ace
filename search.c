@@ -62,14 +62,14 @@ int ply;
 
 int history[2][64][64];
 
-static int sort_deltaset(struct board* board, char who, struct deltaset* set);
+static int sort_deltaset(struct board* board, char who, struct deltaset* set, move_t* tablemove);
 int search(struct board* board, move_t* best, int depth, int alpha, int beta,
         int capturemode, int nullmode, char who);
 static int try_move(struct board* board, move_t* move, move_t* best, struct transposition* trans,
         int depth, int* alpha, int beta, int capturemode, int nullmode, char* pvariation, char who);
 
-static int transposition_table_search(struct board* board, struct deltaset* out, int depth, move_t* best,
-        struct transposition* trans, int* alpha, int beta, int capturemode, int nullmode, char* pvariation, char who);
+static int transposition_table_search(struct board* board, int depth, move_t* best, move_t* move,
+        int * alpha, int beta);
 
 // We only need to copy the first 8 bytes of m2 to m1, and this can be done in one operation
 #define move_copy(m1, m2) (*((struct delta_compressed *) (m1)) = *((struct delta_compressed *) (m2)))
@@ -83,21 +83,17 @@ static void update_killer(int ply, move_t* m) {
 
 static void insertion_sort(move_t* moves, int* scores, int start, int end) {
     /* A stable sorting algorithm */
-    int i, j, k, ts;
+    int i, k, ts;
     move_t tm;
-    for (i = start; i < end; i++) {
-        for (k = i - 1; k >= start; k--) {
-            if (scores[k] >= scores[i])
-                break;
+    for (i = start + 1; i < end; i++) {
+        ts = scores[i];
+        move_copy(&tm, &moves[i]);
+        for (k = i; k > start && scores[k - 1] < ts; k--) {
+            move_copy(&moves[k], &moves[k-1]);
+            scores[k] = scores[k-1];
         }
-        for (j = k + 1; j < i; j++) {
-            ts = scores[j];
-            move_copy(&tm, &moves[j]);
-            scores[j] = scores[i];
-            move_copy(&moves[j], &moves[i]);
-            scores[i] = ts;
-            move_copy(&moves[i], &tm);
-        }
+        scores[k] = ts;
+        move_copy(&moves[k], &tm);
     }
 }
 
@@ -115,7 +111,7 @@ static int move_see(struct board* board, struct deltaset* set, move_t* move) {
     return score;
 }
 
-static int sort_deltaset(struct board* board, char who, struct deltaset* set) {
+static int sort_deltaset(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
     /*
      * Sorts the available moves according to how good it is. The criterion is:
      * 1. Moves that result in a won position in the transposition table
@@ -140,11 +136,15 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set) {
         if (transposition_table_read(board->hash, &stored) == 0)
             scores[i] = -stored->score;
 
+        // Found in transposition table
+        if (move_equal(*tablemove, set->moves[i]))
+            scores[i] = 60000;
+
         // This way, checks will be before all other moves except checkmates
         if (is_in_check(board, 1-who, board_occupancy(board, 1-who), board_occupancy(board, who))) {
-            scores[i] += 15000;
+            scores[i] += 20000;
         }
-        if (scores[i] >= 10000) k++;
+        if (scores[i] > 10000) k++;
         reverse_move(board, who, &set->moves[i]);
     }
 
@@ -239,8 +239,8 @@ static int try_move(struct board* board, move_t* restrict move, move_t* restrict
             trans->type = EXACT | MOVESTORED;
             trans->score = s;
         }
-        if (s < beta)
-            *pvariation = 0;
+        *pvariation = 0;
+        history[who][move->square1][move->square2] += depth / 8;
     }
     if (beta <= *alpha) {
         beta_cutoff_count += 1;
@@ -250,8 +250,6 @@ static int try_move(struct board* board, move_t* restrict move, move_t* restrict
             move_copy(&trans->move, move);
             trans->type = BETA_CUTOFF | MOVESTORED;
             trans->score = s;
-            if (move->captured == -1 && move->promotion == move->piece)
-                history[who][move->square1][move->square2] += depth;
         }
         return 0;
     }
@@ -259,39 +257,30 @@ static int try_move(struct board* board, move_t* restrict move, move_t* restrict
     return 1;
 }
 
-static int transposition_table_search(struct board* board, struct deltaset* out, int depth, move_t* best,
-        struct transposition* trans, int* alpha, int beta, int capturemode, int nullmode, char* pvariation, char who) {
+static int transposition_table_search(struct board* board, int depth, move_t* best, move_t* move, int * alpha, int beta) {
     struct transposition * stored;
-    move_t move;
     int score;
+    move->piece = -1;
     if (transposition_table_read(board->hash, &stored) == 0 && position_count_table_read(board->hash) < 1) {
         score = transform_checkmate(board, stored);
         if (stored->depth >= depth) {
             if ((stored->type & EXACT)) {
                 move_copy(best, &stored->move);
                 *alpha = score;
-                *trans = *stored;
                 return 0;
             } 
-            if ((stored->type & ALPHA_CUTOFF) &&
-                    score <= *alpha) {
+            if ((stored->type & ALPHA_CUTOFF) && score <= *alpha) {
                 *alpha = score;
-                *trans = *stored;
                 return 0;
             }
-            if ((stored->type & BETA_CUTOFF) &&
-                    score >= beta) {
+            if ((stored->type & BETA_CUTOFF) && score >= beta) {
                 *alpha = score;
-                *trans = *stored;
                 return 0;
             }
         } 
-        move_copy(&move, &stored->move);
-        // This is a proven good move, so try it first, to improve
-        // alpha and beta cutoffs
         if (stored->type & MOVESTORED) {
-            if (!try_move(board, &move, best, trans, depth, alpha, beta, capturemode, nullmode, pvariation, who))
-                return 0;
+            move_copy(move, &stored->move);
+            return 1;
         }
     }
     return -1;
@@ -381,7 +370,7 @@ int search(struct board* board, move_t* best,
         }
     }
 
-    // if (out.check) depth += 7;
+    if (out.check) depth += 5;
     
     transposition.depth = depth;
 
@@ -399,15 +388,17 @@ int search(struct board* board, move_t* best,
         if (score > alpha)
             alpha = score;
     }
+    move_t tablemove;
 
     // Look in the transposition table to see if we have seen the position before,
     // and if so, return the score if possible.
     // Even if we can't return the score due to lack of depth,
     // the stored move is probably good, so we can improve the pruning
-    if (!transposition_table_search(board, &out, depth, best, &transposition, &alpha, beta, capturemode, nullmode, &pvariation, who)) {
+    int res = transposition_table_search(board, depth, best, &tablemove, &alpha, beta);
+    if (res == 0) {
         goto CLEANUP1;
     }
-    
+
     // Null pruning:
     // If we skip a move, and the move is still bad for the oponent,
     // then our move must have been great
@@ -424,8 +415,13 @@ int search(struct board* board, move_t* best,
         }
     }
 
+    // Internal iterative depening
+    if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 50 && !capturemode && !nullmode) {
+        alpha_cutoff_count += 1;
+        search(board, &tablemove, depth - 20, alpha, beta, capturemode, nullmode, who);
+    }
 
-    int ncaptures = sort_deltaset(board, who, &out);
+    int ncaptures = sort_deltaset(board, who, &out, &tablemove);
 
     int value = 0;
     int delta_cutoff = 350;
@@ -453,8 +449,8 @@ int search(struct board* board, move_t* best,
                     alpha = value;
                 }
             } else {
-                // After depth 40 (i.e. 8 plies of capture mode), restrict to captures only
-                if (depth <= 40)
+                // After depth 30 (i.e. 9 plies of capture mode), restrict to captures only
+                if (depth <= 30)
                     continue;
             }
         }
@@ -477,7 +473,7 @@ int search(struct board* board, move_t* best,
     // if the current score of the board is more than a minor piece less than alpha,
     // because our move can only increase the positional scores,
     // which is not that large of a factor
-    // TODO: more agressive pruning. If ply>6 and depth<=20, also prune with delta_cutoff=500
+    // TODO: more agressive pruning. If ply>7 and depth<=20, also prune with delta_cutoff=500
     if ((depth <= 10 || (depth <= 20 && ply > 6))
             && !out.check && alpha > -CHECKMATE/2 && beta < CHECKMATE/2 && nmoves > 6) {
         initial_score = board_score(board, who, &out, alpha, beta);
@@ -557,7 +553,6 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
         }
 
         ply = 0;
-
         // A depth-4 search should always be accomplishable within the time limit
         s = search(board, &best, 40, -INFINITY, INFINITY,
             0 /* Capture mode */, 0 /* null-mode */, who);
