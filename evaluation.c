@@ -181,13 +181,6 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     blackmaterial = material_for_player(board, 1);
     score = whitematerial - blackmaterial;
 
-    // Positional scores don't have THAT huge of an effect, so if the situation is already hopeless, give up
-    if (score + 300 < alpha) {
-        return score;
-    }
-    if (score > beta + 300)
-        return score;
-
     uint64_t pawns[2], minors[2], majors[2], pieces[2], kings[2], outposts[2];
 
     pawns[0] = P2BM(board, WHITEPAWN);
@@ -215,6 +208,14 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 
     if (endgame)
         return board_score_endgame(board, who, mvs);
+
+    // Positional scores don't have THAT huge of an effect, so if the situation is already hopeless, give up
+    if (score + 300 < alpha) {
+        return score;
+    }
+    if (score > beta + 300)
+        return score;
+
 
     uint64_t pawn_attacks[2];
 
@@ -471,15 +472,6 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     return score;
 }
 
-static int dist(int sq1, int sq2) {
-    int rank1, file1, rank2, file2;
-    rank1 = sq1 / 8;
-    file1 = sq1 % 8;
-    rank2 = sq1 / 8;
-    file2 = sq2 % 8;
-    return abs(rank1-rank2) + abs(file1-file2);
-}
-
 static int kdist(int sq1, int sq2) {
     int rank1, file1, rank2, file2;
     rank1 = sq1 / 8;
@@ -492,13 +484,161 @@ static int kdist(int sq1, int sq2) {
     else return dh;
 }
 
-// Endgame behames very differently, so we have a separate scoring function
+static int dist(int sq1, int sq2) {
+    return kdist(sq1, sq2);
+    int rank1, file1, rank2, file2;
+    rank1 = sq1 / 8;
+    file1 = sq1 % 8;
+    rank2 = sq1 / 8;
+    file2 = sq2 % 8;
+    return abs(rank1-rank2) + abs(file1-file2);
+}
+
+
+int distance_to_score[9] = {40, 40, 40, 30, 20, 15, 10, 5, 0};
+
+// Table of how easy certain endgames are to win
+// This is a hash table, computed via:
+// nwqueens + nbqueens*3 + nwrooks * 9 + nbrooks * 27 + nwbishops * 81 + nbbishops * 243 + nwknights * 729 + nbknights * 2187
+int insufficient_material_table[6561];
+
+static int material_hash_wp(int nwqueens, int nbqueens, int nwrooks, int nbrooks, int nwbishops, int nbbishops,
+        int nwknights, int nbknights) {
+    return nwqueens +
+        nbqueens * 3 + 
+        nwrooks * 9 + 
+        nbrooks * 27 + 
+        nwbishops * 81 + 
+        nbbishops * 243 + 
+        nwknights * 729 + 
+        nbknights * 2187;
+}
+
+static int material_hash(struct board* board) {
+    return material_hash_wp(bitmap_count_ones(board->pieces[0][QUEEN]), bitmap_count_ones(board->pieces[1][QUEEN]),
+        bitmap_count_ones(board->pieces[0][ROOK]), bitmap_count_ones(board->pieces[1][ROOK]),
+        bitmap_count_ones(board->pieces[0][BISHOP]), bitmap_count_ones(board->pieces[1][BISHOP]),
+        bitmap_count_ones(board->pieces[0][KNIGHT]), bitmap_count_ones(board->pieces[1][KNIGHT]));
+}
+
+void initialize_endgame_tables() {
+    // -1 is our junk value
+    for (int i = 0; i < 6561; i++) {
+        insufficient_material_table[i] = -1;
+    }
+#define PCHECKMATE 4096
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 0, 0)] = 0;
+    /* Absolute draws */
+    // KB vs K
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 1, 0, /* Knight */ 0, 0)] = 0;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 1, /* Knight */ 0, 0)] = 0;
+    // KB vs KB
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 1, 1, /* Knight */ 0, 0)] = 0;
+    // KN vs K
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 1, 0)] = 0;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 0, 1)] = 0;
+    // KN vs KN
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 1, 1)] = 0;
+    // KNN vs KN
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 2, 1)] = 0;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 1, 2)] = 0;
+    // KNN vs KNN
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 2, 2)] = 0;
+
+    /* Basic checkmates */
+    // KQX vs K. The easiest. We should be careful not to assign to large checkmate values without search proving that
+    // checkmate is possible (since after all the queen might be taken)
+    for (int i = 0; i <= 2; i++) {
+        for (int j = 0; j <= 2; j++) {
+            for (int k = 0; k <= 2; k++) {
+                insufficient_material_table[material_hash_wp(/* Queen */ 1, 0, /* Rook */ i, 0, /* Bishop */ j, 0, /* Knight */ k, 0)] = 
+                    PCHECKMATE;
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 1, /* Rook */ 0, i, /* Bishop */ 0, j, /* Knight */ 0, k)] =
+                    -PCHECKMATE;
+            }
+        }
+    }
+    // KR vs K. Should be easy
+    for (int i = 1; i < 2; i++) {
+        for (int j = 0; j <= 2; j++) {
+            for (int k = 0; k <= 2; k++) {
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ i, 0, /* Bishop */ j, 0, /* Knight */ k, 0)] =
+                    PCHECKMATE/2 * i;
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, i, /* Bishop */ 0, j, /* Knight */ 0, k)] =
+                    -PCHECKMATE/2 * i;
+            }
+        }
+    }
+    // KBB vs K.
+    for (int i = 0; i <= 2; i++) {
+        insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 2, 0, /* Knight */ i, 0)] = 3*PCHECKMATE/8;
+        insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 2, /* Knight */ 0, i)] = -3*PCHECKMATE/8;
+    }
+    // KBN vs K. This could be tricky though
+    for (int i = 1; i <= 2; i++) {
+        insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 1, 0, /* Knight */ i, 0)] = PCHECKMATE/4;
+        insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 1, /* Knight */ 0, i)] = -PCHECKMATE/4;
+    }
+
+    // KQ vs KR. Usually a win
+    for (int i = 0; i <= 2; i++) {
+        for (int j = 0; j <= 2; j++) {
+            for (int k = 0; k <= 2; k++) {
+                insufficient_material_table[material_hash_wp(/* Queen */ 1, 0, /* Rook */ i, 1, /* Bishop */ j, 0, /* Knight */ k, 0)] =
+                    PCHECKMATE/4;
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 1, /* Rook */ 1, i, /* Bishop */ 0, j, /* Knight */ 0, k)] =
+                    -PCHECKMATE/4;
+            }
+        }
+    }
+    // KQ vs K+minor pieces. Usually a win, but could be difficult
+    for (int i = 0; i <= 2; i++) {
+        for (int j = 0; j <= 2; j++) {
+            for (int k = 0; k <= 2; k++) {
+                insufficient_material_table[material_hash_wp(/* Queen */ 1, 0, /* Rook */ i, 0, /* Bishop */ j, 1, /* Knight */ k, 0)] =
+                    PCHECKMATE/8;
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 1, /* Rook */ 0, i, /* Bishop */ 1, j, /* Knight */ 0, k)] =
+                    -PCHECKMATE/8;
+                insufficient_material_table[material_hash_wp(/* Queen */ 1, 0, /* Rook */ i, 0, /* Bishop */ j, 2, /* Knight */ k, 0)] =
+                    PCHECKMATE/8;
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 1, /* Rook */ 0, i, /* Bishop */ 2, j, /* Knight */ 0, k)] =
+                    -PCHECKMATE/8;
+                insufficient_material_table[material_hash_wp(/* Queen */ 1, 0, /* Rook */ i, 0, /* Bishop */ j, 1, /* Knight */ k, 1)] =
+                    PCHECKMATE/8;
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 1, /* Rook */ 0, i, /* Bishop */ 1, j, /* Knight */ 1, k)] =
+                    -PCHECKMATE/8;
+                insufficient_material_table[material_hash_wp(/* Queen */ 1, 0, /* Rook */ i, 0, /* Bishop */ j, 0, /* Knight */ k, 2)] =
+                    PCHECKMATE/8;
+                insufficient_material_table[material_hash_wp(/* Queen */ 0, 1, /* Rook */ 0, i, /* Bishop */ 0, j, /* Knight */ 2, k)] =
+                    -PCHECKMATE/8;
+            }
+        }
+    }
+    
+    // KR vs K+minor. Drawish
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 1, 0, /* Bishop */ 0, 1, /* Knight */ 0, 0)] = 2;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 1, /* Bishop */ 1, 0, /* Knight */ 0, 0)] = -2;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 1, 0, /* Bishop */ 0, 0, /* Knight */ 0, 1)] = 2;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 1, /* Bishop */ 0, 0, /* Knight */ 1, 0)] = -2;
+    // KR+minor vs KR. Drawish
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 1, 1, /* Bishop */ 0, 1, /* Knight */ 0, 0)] = -2;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 1, 1, /* Bishop */ 1, 0, /* Knight */ 0, 0)] = 2;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 1, 1, /* Bishop */ 0, 0, /* Knight */ 0, 1)] = -2;
+    insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 1, 1, /* Bishop */ 0, 0, /* Knight */ 1, 0)] = 2;
+}
+
+// Endgame behaves very differently, so we have a separate scoring function
 static int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs) {
     int rank, file;
 
     int score = 0;
     uint64_t temp;
     int square, count;
+
+
+#define EG_NONE 0
+#define EG_KPKP 1
+    int endgame_type = EG_NONE;
 
     uint64_t pawns[2], minors[2], majors[2], kings[2], pieces[2];
     pawns[0] = P2BM(board, WHITEPAWN);
@@ -526,22 +666,23 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
     // Draws from insufficient material
 
+    uint64_t mask;
+
+#define ENDGAME_KNOWLEDGE
+#ifdef ENDGAME_KNOWLEDGE
     // Only kings
     if (bitmap_count_ones(pieces[0]) == 1 && bitmap_count_ones(pieces[1]) == 1) {
         return 0;
     }
-    uint64_t mask;
-
-#ifdef ENDGAME_KNOWLEDGE
 
     // No pawns
     if (bitmap_count_ones(pawns[0]) == 0 && bitmap_count_ones(pawns[1]) == 0) {
         int nknights[2], nbishops[2], nrooks[2], nqueens[2];
         for (int i = 0; i < 2; i++) {
-            nknights[i] = bitmap_count_ones(board->pieces[who][KNIGHT]);
-            nbishops[i] = bitmap_count_ones(board->pieces[who][BISHOP]);
-            nrooks[i] = bitmap_count_ones(board->pieces[who][ROOK]);
-            nqueens[i] = bitmap_count_ones(board->pieces[who][QUEEN]);
+            nknights[i] = bitmap_count_ones(board->pieces[i][KNIGHT]);
+            nbishops[i] = bitmap_count_ones(board->pieces[i][BISHOP]);
+            nrooks[i] = bitmap_count_ones(board->pieces[i][ROOK]);
+            nqueens[i] = bitmap_count_ones(board->pieces[i][QUEEN]);
         }
         if (nqueens[0] > 0 && nqueens[1] == 0 && nrooks[1] == 0)
             score += 3000;
@@ -551,13 +692,18 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
             score += 1000;
         else if (nqueens[1] > 0 && nqueens[0] == 0 && nrooks[0] == 1 && nbishops[0] == 0 && nknights[0] == 0)
             score -= 1000;
+        // KNNK is a draw
         else if (nqueens[0] == 0 && nqueens[1] == 0 && nrooks[0] == 0 && nrooks[1] == 0 && nbishops[0] == 0 && nbishops[1] == 0)
+            return 0;
+        // KBKB is a draw
+        else if (nqueens[0] == 0 && nqueens[1] == 0 && nrooks[0] == 0 && nrooks[1] == 0 && nbishops[0] <= 1 && nbishops[1] <= 1 && nknights[0] == 0 && nknights[1] == 0)
             return 0;
     }
 
     // Pawn + king vs king
     if (bitmap_count_ones(majors[0]) == 0 && bitmap_count_ones(majors[1]) == 0 &&
             bitmap_count_ones(minors[0]) == 0 && bitmap_count_ones(minors[1]) == 0) {
+        endgame_type = EG_KPKP;
         if (bitmap_count_ones(pawns[0]) > 1 && bitmap_count_ones(pawns[1]) == 0)
             score += 400;
         if (bitmap_count_ones(pawns[1]) > 1 && bitmap_count_ones(pawns[0]) == 0)
@@ -603,7 +749,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
             if (majors[1] & mask) score -= 100;
 
         }
-        score -= (7 - dist(wkingsquare, bkingsquare)) * 30;
     } else if (bitmap_count_ones(pieces[1]) == 1) {
         if (majors[0]) {
             int rank = bkingsquare / 8;
@@ -625,7 +770,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
                     mask |= RANK1 << (8*rank-8);
             if (majors[0] & mask) score += 100;
         }
-        score += (7 - dist(wkingsquare, bkingsquare)) * 30;
     }
 
 #endif
@@ -642,9 +786,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         file = square & 0x7;
         whitematerial += 135;
         score += pawn_table_endgame[56 - square + file + file];
-        // undefended pieces are likely taken
-        if ((1ull << square) & undefended[0])
-            score -= 50;
         // doubled pawns are bad
         if ((AFILE << file)  & (pawns[0] ^ (1ull << square)))
             score -= 20;
@@ -652,12 +793,17 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         // Encourage kings to come and protect these pawns
         int dist_from_wking = dist(square, wkingsquare);
         int dist_from_bking = dist(square, bkingsquare);
-        score += (dist_from_bking - dist_from_wking) * 20;
+        int dist_score = 0;
+        dist_score += (dist_from_bking - dist_from_wking) * 15;
         // passed pawns are good
         if (!((AFILE << square) & pawns[1])) {
             score += passed_pawn_table_endgame[rank];
-            score += (dist_from_bking - dist_from_wking) * 40;
+            dist_score += (dist_from_bking - dist_from_wking) * 30;
         }
+        if (endgame_type == EG_KPKP)
+            dist_score *= 2;
+
+        score += dist_score;
 
         mask = 0;
         // isolated pawns are bad
@@ -675,19 +821,23 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         rank = square / 8;
         blackmaterial += 135;
         score -= pawn_table_endgame[square];
-        if ((1ull << square) & undefended[1])
-            score += 50;
         if ((AFILE << file) & (pawns[1] ^ (1ull << square)))
             score += 20;
 
         int dist_from_wking = dist(square, wkingsquare);
         int dist_from_bking = dist(square, bkingsquare);
-        score += (dist_from_bking - dist_from_wking) * 20;
+        int dist_score = 0;
+        dist_score += (dist_from_bking - dist_from_wking) * 15;
 
         if (!(((AFILE << file) >> (56 - 8 * rank)) & pawns[0])) {
             score -= passed_pawn_table_endgame[8-rank];
-            score += (dist_from_bking - dist_from_wking) * 40;
+            dist_score += (dist_from_bking - dist_from_wking) * 30;
         }
+
+        if (endgame_type == EG_KPKP) {
+            dist_score *= 2;
+        }
+        score -= dist_score;
 
         mask = 0;
         if (file != 0) mask |= (AFILE << (file - 1));
@@ -700,14 +850,10 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         file = square & 0x7;
         whitematerial += 275;
         score += knight_table[56 - square + file + file];
-        if ((1ull << square) & undefended[0])
-            score -= 150;
     }
     bmloop(P2BM(board, BLACKKNIGHT), square, temp) {
         blackmaterial += 275;
         score -= knight_table[square];
-        if ((1ull << square) & undefended[1])
-            score += 150;
     }
 
     count = 0;
@@ -716,8 +862,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         whitematerial += 300;
         score += bishop_table[56 - square + file + file];
         count += 1;
-        if ((1ull << square) & undefended[0])
-            score -= 150;
     }
     // Bishop pairs are very valuable
     // In the endgame, 2 bishops can checkmate a king,
@@ -729,8 +873,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         blackmaterial += 300;
         score -= bishop_table[square];
         count += 1;
-        if ((1ull << square) & undefended[1])
-            score += 150;
     }
 
     score -= (count == 2) * 100;
@@ -749,9 +891,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         // We add 80 (40 on this, 40 on other)
         if ((AFILE << file) & (majors[0] ^ (1ull << square)))
             score += 30;
-
-        if ((1ull << square) & undefended[0])
-            score -= 320;
     }
     bmloop(P2BM(board, BLACKROOK), square, temp) {
         file = square & 0x7;
@@ -763,9 +902,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
         if ((AFILE << file) & (majors[1] ^ (1ull << square)))
             score -= 30;
-
-        if ((1ull << square) & undefended[1])
-            score += 320;
     }
     bmloop(P2BM(board, WHITEQUEEN), square, temp) {
         file = square & 0x7;
@@ -778,9 +914,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
         if ((AFILE << file) & (majors[0] ^ (1ull << square)))
             score += 30;
-
-        if ((1ull << square) & undefended[0])
-            score -= 620;
     }
     bmloop(P2BM(board, BLACKQUEEN), square, temp) {
         blackmaterial += 880;
@@ -791,14 +924,11 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
         if ((AFILE << file) & (majors[1] ^ (1ull << square)))
             score -= 30;
-
-        if ((1ull << square) & undefended[1])
-            score += 620;
     }
 
     score += (whitematerial - blackmaterial);
 
-    int winning_side = 1;
+    int winning_side = 0;
     if (whitematerial > blackmaterial)
         winning_side = 1;
     else if (whitematerial < blackmaterial)
@@ -806,14 +936,16 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
 
     // Encourage the winning side to move kings closer together
-    score += winning_side * (14 - dist(wkingsquare, bkingsquare));
+    score += winning_side * distance_to_score[dist(wkingsquare, bkingsquare)];
 
     // King safety
 
     file = wkingsquare & 0x7;
 
     score += king_table_endgame[56 - wkingsquare + file + file];
+    score -= king_table_endgame[bkingsquare];
 
+    /*
     uint64_t king_movements;
     king_movements = kings[0] | attack_set_king(wkingsquare, pieces[0], pieces[1]);
     count = bitmap_count_ones(king_movements & (~attacks[1]));
@@ -826,7 +958,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     } else if (count == 0) score -= 20;
 
     file = bkingsquare & 0x7;
-    score -= king_table_endgame[bkingsquare];
 
     king_movements = kings[1] | attack_set_king(bkingsquare, pieces[1], pieces[0]);
     count = bitmap_count_ones(king_movements & (~attacks[0]));
@@ -840,6 +971,7 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
     // the side with more options is better
     score += (bitmap_count_ones(attacks[0]) - bitmap_count_ones(attacks[1])) * 8;
+    */
 
     return score;
 }

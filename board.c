@@ -246,7 +246,6 @@ char* board_init_from_fen(struct board* out, char* position) {
 void calgebraic_to_move(char * input, struct board* board, struct delta* move) {
     // Real algebraic notation (Nf3, etc)
     int piece;
-    int captured = -1;
     int promotion = -1;
     int misc = 0;
     int rank1, rank2 , file1, file2;
@@ -573,6 +572,8 @@ int gives_check(struct board * board, uint64_t occupancy, move_t* move, int who)
             return attack_set_queen(move->square2, 0, occupancy) & board->pieces[1-who][KING];
         case KING:
             // Kings could never give checks
+            return 0;
+        default:
             return 0;
     }
 }
