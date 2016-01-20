@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "board.h"
+#include <assert.h>
 
 int main(int argc, char* argv[]) {
     char *buffer = malloc(1024);
@@ -19,7 +20,7 @@ int main(int argc, char* argv[]) {
         board_init(&board);
         // For now, forget about trick lines
         cursor = buffer;
-        if (*cursor != '3') {
+        if (*cursor != '1') {
             continue;
         }
         cursor += 2;
@@ -27,7 +28,23 @@ int main(int argc, char* argv[]) {
         char who = 0;
         token = strtok(cursor, " ");
         while (token) {
-            algebraic_to_move(token, &board, &move);
+            char * c = token;
+            if (*c >= '1' && *c <= '9') {
+                token = strtok(NULL, " ");
+                continue;
+            }
+            while (*c) {
+                if (*c == '?' || *c == '!' || *c == '\n') {
+                    *c = 0;
+                    break;
+                }
+                c++;
+            }
+            calgebraic_to_move(token, &board, &move);
+            if (move.piece == -1) {
+                printf("Ambiguous move (%s) in opening: %s\n", token, line);
+                break;
+            }
             if (!is_valid_move(&board, who, move)) {
                 printf("Invalid move (%s) in opening: %s\n", token, line);
                 break;

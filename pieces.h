@@ -22,5 +22,7 @@
 #define BLACKQUEEN 10
 #define BLACKKING 11
 
+#define NPIECES 12
+
 extern const char* piece_names;
 #endif

@@ -111,7 +111,7 @@ int opening_table_read(uint64_t hash, move_t* move) {
     if (opening_table[hash1].valid && opening_table[hash1].hash == hash) {
         if (opening_table[hash1].nvar == 0) return -1;
         while (1) {
-            index = rand64() % opening_table[hash1].nvar;
+            index = rand() % opening_table[hash1].nvar;
             if (!(opening_table[hash1].avoid & (1 << index))) {
                 *move = *((move_t *) &opening_table[hash1].move[index]);
                 return 0;
@@ -163,7 +163,7 @@ char* engine_init_from_position(char* position, int max_thinking_time, char flag
     global_state.won = 0;
     global_state.max_thinking_time = max_thinking_time;
     global_state.flags = flags;
-    rand64_seed(time(NULL));
+    srand(time(NULL));
     return pos;
 }
 
@@ -267,11 +267,14 @@ int engine_play() {
 
     move_t move = find_best_move(&global_state.curboard, global_state.current_side, global_state.max_thinking_time, global_state.flags);
     char buffer[8];
-    move_to_algebraic(&global_state.curboard, buffer, &move);
-    if (global_state.flags & FLAGS_UCI_MODE) 
+    if (global_state.flags & FLAGS_UCI_MODE) {
+        move_to_algebraic(&global_state.curboard, buffer, &move);
         printf("bestmove %s\n", buffer);
-    else
+    }
+    else {
+        move_to_calgebraic(&global_state.curboard, buffer, &move);
         printf("%s\n", buffer);
+    }
     fflush(stdout);
     fprintf(stderr, "Spent %lu milliseconds for move %s\n", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
     return engine_move_internal(move);
@@ -279,7 +282,7 @@ int engine_play() {
 
 int engine_move(char * buffer) {
     move_t move;
-    algebraic_to_move(buffer, engine_get_board(), &move);
+    calgebraic_to_move(buffer, engine_get_board(), &move);
     return engine_move_internal(move);
 }
 

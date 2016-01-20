@@ -60,10 +60,10 @@ struct delta {
     // A reversible change to board
     unsigned char square1;
     unsigned char square2;
-    char piece;
-    char captured;
+    char piece; // 3 bits used
+    char captured; // 3 bits used
 
-    char promotion;
+    char promotion; // 3 bits used
     char misc; // 1 bit for if move was a castle,
     char cancastle; // 4 bit padding, 2 bit white, 2 bit black
     char enpassant; // en-passant square, if any
@@ -89,7 +89,9 @@ struct transposition {
     char type;
     char valid;
     int16_t age;
-    int16_t depth;
+    char depth;
+    // 16 bytes
+    // char move;
     struct delta_compressed move;
     // Make the size of each entry divide 64 for cache performance
     uint64_t padding;
@@ -113,6 +115,7 @@ struct deltaset {
     unsigned char who;
     uint64_t pinned; // a bitmap of all pinned pieces
     uint64_t opponent_attacks;
+    uint64_t my_attacks;
 };
 
 /* Board initialization and serialization */

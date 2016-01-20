@@ -292,6 +292,9 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             subscore += knight_table[loc];
             // Outposts are good
             if ((1ull << square) & outposts[w]) subscore += 35;
+            uint64_t attack_mask = attack_set_knight(square, pieces[w], pieces[1 - w]);
+            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 2 * bitmap_count_ones(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -316,6 +319,9 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             subscore += bishop_table[loc];
             count += 1;
             if ((1ull << square) & outposts[w]) subscore += 20;
+            uint64_t attack_mask = attack_set_bishop(square, pieces[w], pieces[1 - w]);
+            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 2 * bitmap_count_ones(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -326,6 +332,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             if (((1ull << square) & pawn_attacks[1 - w]) && who)
                 subscore -= 60;
 #endif
+            /*
             // At least before end-game, central pawns on same
             // colored squares are bad for bishops
             if ((1ull << square) & BLACK_CENTRAL_SQUARES) {
@@ -333,6 +340,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             } else {
                 subscore -= bitmap_count_ones((pawns[0] | pawns[1]) & WHITE_CENTRAL_SQUARES) * 15;
             }
+            */
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned)
                 subscore -= 15;
@@ -350,15 +358,17 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             if ((1ull << square) & outposts[w]) subscore += 20;
             // Rooks on open files are great
             if (!((AFILE << file) & (pawns[0] | pawns[1])))
-                subscore += 20;
+                subscore += 30;
             // Rooks on semiopen files are good
             else if ((AFILE << file) & pawns[1-w])
-                subscore += 10;
+                subscore += 20;
 
             // Doubled rooks are very powerful.
             // We add 80 (40 on this, 40 on other)
             if ((AFILE << file) & (majors[w] ^ (1ull << square)))
                 subscore += 25;
+            uint64_t attack_mask = attack_set_rook(square, pieces[w], pieces[1 - w]);
+            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
@@ -388,6 +398,9 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 
             if ((AFILE << file) & (majors[w] ^ (1ull << square)))
                 subscore += 30;
+
+            uint64_t attack_mask = attack_set_queen(square, pieces[w], pieces[1 - w]);
+            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
@@ -452,11 +465,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     }
 
     // castling is almost always awesome
-    score += (board->castled & 1) * 75 - ((board->castled & 2) >> 1) * 75;
-    score += ((board->cancastle & 12) != 0) * 25 - ((board->cancastle & 3) != 0 ) * 25;
-
-    // the side with more options is better
-    score += (bitmap_count_ones(attacks[0]) - bitmap_count_ones(attacks[1])) * 16;
+    score += (board->castled & 1) * 20 - ((board->castled & 2) >> 1) * 20;
+    score += ((board->cancastle & 12) != 0) * 10 - ((board->cancastle & 3) != 0 ) * 10;
 
     return score;
 }
@@ -468,6 +478,18 @@ static int dist(int sq1, int sq2) {
     rank2 = sq1 / 8;
     file2 = sq2 % 8;
     return abs(rank1-rank2) + abs(file1-file2);
+}
+
+static int kdist(int sq1, int sq2) {
+    int rank1, file1, rank2, file2;
+    rank1 = sq1 / 8;
+    file1 = sq1 % 8;
+    rank2 = sq1 / 8;
+    file2 = sq2 % 8;
+    int dh = abs(rank1-rank2);
+    int dv = abs(file1-file2);
+    if (dh < dv) return dv;
+    else return dh;
 }
 
 // Endgame behames very differently, so we have a separate scoring function
@@ -502,12 +524,63 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     undefended[0] = attacks[1] ^ (attacks[0] & attacks[1]);
     undefended[1] = attacks[0] ^ (attacks[0] & attacks[1]);
 
+    // Draws from insufficient material
+
+    // Only kings
     if (bitmap_count_ones(pieces[0]) == 1 && bitmap_count_ones(pieces[1]) == 1) {
-        // This is a draw
         return 0;
     }
-
     uint64_t mask;
+
+#ifdef ENDGAME_KNOWLEDGE
+
+    // No pawns
+    if (bitmap_count_ones(pawns[0]) == 0 && bitmap_count_ones(pawns[1]) == 0) {
+        int nknights[2], nbishops[2], nrooks[2], nqueens[2];
+        for (int i = 0; i < 2; i++) {
+            nknights[i] = bitmap_count_ones(board->pieces[who][KNIGHT]);
+            nbishops[i] = bitmap_count_ones(board->pieces[who][BISHOP]);
+            nrooks[i] = bitmap_count_ones(board->pieces[who][ROOK]);
+            nqueens[i] = bitmap_count_ones(board->pieces[who][QUEEN]);
+        }
+        if (nqueens[0] > 0 && nqueens[1] == 0 && nrooks[1] == 0)
+            score += 3000;
+        else if (nqueens[1] > 0 && nqueens[0] == 0 && nrooks[0] == 0)
+            score -= 3000;
+        else if (nqueens[0] > 0 && nqueens[1] == 0 && nrooks[1] == 1 && nbishops[1] == 0 && nknights[1] == 0)
+            score += 1000;
+        else if (nqueens[1] > 0 && nqueens[0] == 0 && nrooks[0] == 1 && nbishops[0] == 0 && nknights[0] == 0)
+            score -= 1000;
+        else if (nqueens[0] == 0 && nqueens[1] == 0 && nrooks[0] == 0 && nrooks[1] == 0 && nbishops[0] == 0 && nbishops[1] == 0)
+            return 0;
+    }
+
+    // Pawn + king vs king
+    if (bitmap_count_ones(majors[0]) == 0 && bitmap_count_ones(majors[1]) == 0 &&
+            bitmap_count_ones(minors[0]) == 0 && bitmap_count_ones(minors[1]) == 0) {
+        if (bitmap_count_ones(pawns[0]) > 1 && bitmap_count_ones(pawns[1]) == 0)
+            score += 400;
+        if (bitmap_count_ones(pawns[1]) > 1 && bitmap_count_ones(pawns[0]) == 0)
+            score -= 400;
+        if (bitmap_count_ones(pawns[0]) == 1 && bitmap_count_ones(pawns[1]) == 0) {
+            int psquare = LSBINDEX(pawns[0]);
+            int prank = psquare / 8;
+            int pfile = psquare % 8;
+            int qsquare = 56 + pfile;
+            if (kdist(qsquare, bkingsquare) + (board->who == 1) < (7 - prank))
+                score += 400;
+        }
+        if (bitmap_count_ones(pawns[1]) == 1 && bitmap_count_ones(pawns[0]) == 0) {
+            int psquare = LSBINDEX(pawns[0]);
+            int prank = psquare / 8;
+            int pfile = psquare % 8;
+            int qsquare = pfile;
+            if (kdist(qsquare, wkingsquare) + (board->who == 0) < prank)
+                score -= 400;
+        }
+    }
+
+
     if (bitmap_count_ones(pieces[0]) == 1) {
         if (majors[1]) {
             int rank = wkingsquare / 8;
@@ -554,6 +627,8 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         }
         score += (7 - dist(wkingsquare, bkingsquare)) * 30;
     }
+
+#endif
 
     int whitematerial, blackmaterial;
     whitematerial = 0;
@@ -665,10 +740,10 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         whitematerial += 550;
         // Rooks on open files are great
         if (!((AFILE << file) & (pawns[0] | pawns[1])))
-            score += 20;
+            score += 30;
         // Rooks on semiopen files are good
         else if ((AFILE << file) & pawns[1])
-            score += 10;
+            score += 20;
 
         // Doubled rooks are very powerful.
         // We add 80 (40 on this, 40 on other)
@@ -682,9 +757,9 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         file = square & 0x7;
         blackmaterial += 550;
         if (!((AFILE << file) & (pawns[0] | pawns[1])))
-            score -= 20;
+            score -= 30;
         else if ((AFILE << file) & pawns[0])
-            score -= 10;
+            score -= 20;
 
         if ((AFILE << file) & (majors[1] ^ (1ull << square)))
             score -= 30;

@@ -25,7 +25,7 @@ int main(int argc, char* argv[]) {
 
     engine_init(depth, 0);
     clock_t start = clock();
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 20; i++) {
         printf("Move %d\n", i);
         engine_play();
     }

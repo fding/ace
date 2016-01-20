@@ -4,6 +4,8 @@
 #include "ace.h"
 
 int main() {
+    setbuf(stdout, NULL);
+    setbuf(stdin, NULL);
     char *buffer = malloc(4046);
     size_t n;
     memset(buffer, 0, 4096);
