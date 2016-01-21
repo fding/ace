@@ -9,7 +9,7 @@ generate_magic: generate_magic.c
 magic.c: generate_magic
 	./generate_magic > magic.c
 
-libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c
+libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c timer.c
 	$(CC) $(CFLAGS) -o magic.o -c magic.c
 	$(CC) $(CFLAGS) -o moves.o -c moves.c
 	$(CC) $(CFLAGS) -o board.o -c board.c
@@ -17,8 +17,9 @@ libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c
 	$(CC) $(CFLAGS) -o engine.o -c engine.c
 	$(CC) $(CFLAGS) -o search.o -c search.c
 	$(CC) $(CFLAGS) -o evaluation.o -c evaluation.c
+	$(CC) $(CFLAGS) -o timer.o -c timer.c
 	$(CC) $(CFLAGS) -flto -r -o ace.o magic.o moves.o board.o util.o engine.o search.o evaluation.o
-	ar rc libace.a ace.o
+	ar rc libace.a ace.o timer.o
 
 clean:
 	rm -f *.o

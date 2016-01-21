@@ -6,16 +6,28 @@
 #include <pthread.h>
 #include <semaphore.h>
 
+struct timec {
+    int wtime;
+    int btime;
+    int winc;
+    int binc;
+    int moves_to_go;
+};
+
 sem_t available_threads;
 pthread_t search_thread;
 void* launch_search_thread(void * argument) {
-    (void) argument;
-    engine_play();
+    struct timec* arg = (struct timec *) argument;
+    char buffer[8];
+    engine_search(buffer, 0, arg->wtime, arg->btime, arg->winc, arg->binc, arg->moves_to_go);
+    printf("bestmove %s\n", buffer);
     sem_post(&available_threads);
 }
 void* launch_ponder_thread(void * argument) {
     (void) argument;
-    engine_ponder();
+    char buffer[8];
+    engine_search(buffer, 1, 0, 0, 0, 0, 0);
+    printf("bestmove %s\n", buffer);
     sem_post(&available_threads);
 }
 
@@ -41,6 +53,10 @@ int main() {
             if (strcmp(token, "uci") == 0) {
                 printf("id name ACE\n");
                 printf("id author D. Ding\n\n");
+                // TODO: actually implement hash map size changing :)
+                printf("option name Hash type spin default 1024 min 1 max 8096\n");
+                printf("option name Ponder type check default true\n");
+                printf("option name OwnBook type check default true\n");
                 printf("uciok\n");
                 break;
             }
@@ -95,13 +111,61 @@ int main() {
                 token = strtok(NULL, " ");
                 if (token != NULL && strcmp(token, "ponder") == 0) {
                     engine_stop_search();
+                    sem_wait(&available_threads);
+                    pthread_create(&search_thread, NULL, launch_ponder_thread, NULL);
+                    pthread_detach(search_thread);
+                    break;
+                } else if (token != NULL && strcmp(token, "infinite") == 0) {
+                    engine_stop_search();
+                    sem_wait(&available_threads);
                     pthread_create(&search_thread, NULL, launch_ponder_thread, NULL);
                     pthread_detach(search_thread);
                     break;
                 }
+
+                struct timec timec;
+                timec.wtime = 8000;
+                timec.btime = 8000;
+                timec.winc = 0;
+                timec.binc = 0;
+                timec.moves_to_go = 1;
+
+                while (token != NULL) {
+                    if (strcmp(token, "wtime") == 0) {
+                        token = strtok(NULL, " ");
+                        if (token) {
+                            timec.wtime = atoi(token);
+                        }
+                    }
+                    else if (strcmp(token, "btime") == 0) {
+                        token = strtok(NULL, " ");
+                        if (token) {
+                            timec.btime = atoi(token);
+                        }
+                    }
+                    else if (strcmp(token, "winc") == 0) {
+                        token = strtok(NULL, " ");
+                        if (token) {
+                            timec.winc = atoi(token);
+                        }
+                    }
+                    else if (strcmp(token, "binc") == 0) {
+                        token = strtok(NULL, " ");
+                        if (token) {
+                            timec.binc = atoi(token);
+                        }
+                    }
+                    else if (strcmp(token, "movestogo") == 0) {
+                        token = strtok(NULL, " ");
+                        if (token) {
+                            timec.moves_to_go = atoi(token);
+                        }
+                    }
+                    token = strtok(NULL, " ");
+                }
                 engine_stop_search();
                 sem_wait(&available_threads);
-                pthread_create(&search_thread, NULL, launch_search_thread, NULL);
+                pthread_create(&search_thread, NULL, launch_search_thread, &timec);
                 pthread_detach(search_thread);
                 break;
             }

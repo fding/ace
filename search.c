@@ -5,6 +5,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <time.h>
+#include "timer.h"
 
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define MIN(a, b) ((a) > (b) ? (b) : (a))
@@ -34,8 +35,7 @@ int branches = 0;
 
 int ply;
 int out_of_time = 0;
-clock_t start;
-int max_thinking_time = 0;
+int signal_stop = 0;
 
 int material_table[5] = {100, 510, 325, 333, 900};
 
@@ -299,7 +299,7 @@ static int transposition_table_search(struct board* board, struct deltaset* set,
     return -1;
 }
 
-int qsearch(struct board* board, int depth, int alpha, int beta, char who) {
+int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int beta, char who) {
     beta_cutoff_count += 1;
     branches += 1;
     alpha = MAX(alpha, -CHECKMATE + board->nmoves);
@@ -314,9 +314,8 @@ int qsearch(struct board* board, int depth, int alpha, int beta, char who) {
     // Check if we are out of time. If so, abort
     // Since clock() is costly, don't do this all the time!
     if (branches % 65536 == 0) {
-        if (clock() - start > max_thinking_time) {
+        if (!timer_continue(timer) || signal_stop) {
             out_of_time = 1;
-            return 0;
         }
     }
 
@@ -397,7 +396,7 @@ int qsearch(struct board* board, int depth, int alpha, int beta, char who) {
         }
 
         apply_move(board, who, &out.moves[i]);
-        score = -qsearch(board, depth - 10, -beta, -alpha, 1 - who);
+        score = -qsearch(board, timer, depth - 10, -beta, -alpha, 1 - who);
         reverse_move(board, who, &out.moves[i]);
         if (alpha < score) {
             alpha = score;
@@ -411,7 +410,7 @@ int qsearch(struct board* board, int depth, int alpha, int beta, char who) {
 
 int futility_margin[7] = {0, 100, 200, 300, 500, 900, 1200};
 
-int search(struct board* board, move_t* restrict best, move_t* restrict prev,
+int search(struct board* board, struct timer* timer, move_t* restrict best, move_t* restrict prev,
         int depth, int alpha, int beta, int extensions, int nullmode, char who) {
 
     // Checkmate pruning: if we found a mate in n in another branch, and we are n+1 away from root,
@@ -448,7 +447,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
     // Since clock() is costly, don't do this all the time!
     if (branches % 65536 == 0) {
         // Check if we are out of time. If so, abort
-        if (clock() - start > max_thinking_time) {
+        if (!timer_continue(timer) || signal_stop) {
             out_of_time = 1;
             ply--;
             return 0;
@@ -508,7 +507,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
             return initial_score;
         }
 
-        score = qsearch(board, 300, alpha, beta, who);
+        score = qsearch(board, timer, 300, alpha, beta, who);
         ply--;
         return score;
     }
@@ -532,7 +531,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
 
     // Razoring (TODO: check if a pawn is promotable)
     if (depth < 30 && !out.check && nmoves > 1 && beta == alpha + 1 && initial_score + 600 <= alpha && tablemove.piece == -1) {
-        score = qsearch(board, 320, alpha, beta, who);
+        score = qsearch(board, timer, 320, alpha, beta, who);
         if (score < alpha - 700) {
             ply--;
             return score;
@@ -545,7 +544,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
     // We check if we have at least 5 pieces. Otherwise, we might encounter zugzwang
     if (depth >= 20 && nullmode == 0 && !out.check && (board->pieces[who][KNIGHT] | board->pieces[who][BISHOP] | board->pieces[who][ROOK] | board->pieces[who][QUEEN])) {
         uint64_t old_enpassant = board_flip_side(board, 1);
-        score = -search(board, &temp, NULL, depth - 30, -beta, -beta+1, extensions, 1, 1 - who);
+        score = -search(board, timer, &temp, NULL, depth - 30, -beta, -beta+1, extensions, 1, 1 - who);
         if (score >= beta) {
             ply--;
             board_flip_side(board, old_enpassant);
@@ -554,10 +553,9 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
         } else {
             // Mate threat extension: if not doing anything allows opponents to checkmate us,
             // we are in a potentially dangerous situation, so extend search
-            score = search(board, &temp, NULL, depth - 30, CHECKMATE/2 - 1, CHECKMATE/2, extensions, 1, 1 - who);
+            score = search(board, timer, &temp, NULL, depth - 30, CHECKMATE/2 - 1, CHECKMATE/2, extensions, 1, 1 - who);
             board_flip_side(board, old_enpassant);
             board->enpassant = old_enpassant;
-            alpha_cutoff_count += 1;
             if (score > CHECKMATE/2) {
                 extensions -= 5;
                 depth += 10;
@@ -568,14 +566,15 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
 
     // Internal iterative depening
     if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 50 && !nullmode) {
-        search(board, &tablemove, prev, depth - 20, alpha, beta, 0, nullmode, who);
+        search(board, timer, &tablemove, prev, depth - 20, alpha, beta, 0, nullmode, who);
     }
 
     int nchecks = sort_deltaset(board, who, &out, &tablemove);
 
     int allow_prune = !out.check && (nmoves > 6) && !extended;
-    int late_move = out.nmoves / 2;
+    int late_move = 4; // out.nmoves / 2;
     for (i = 0; i < out.nmoves; i++) {
+        move_t * move = &out.moves[i];
         if (out.moves[i].captured != -1 && depth <= 20 && allow_prune) {
             // Don't consider bad captures
             // TODO: what happens if we end up skipping all legal moves? Should it trigger alpha cutoff?
@@ -599,21 +598,26 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
         // We also sort moves, so that good moves are probably at the front
         // Hence, if the move is non-tactical and appears near the end,
         // it probably isn't as good, so we can search at reduced depth
-        if (i > late_move && i >= nchecks && allow_prune && beta == alpha + 1 && depth >= 30 && out.moves[i].captured == -1
-                && out.moves[i].promotion == out.moves[i].piece) {
-            depth -= 10;
-        }
-
-        move_t temp;
-        move_t * move = &out.moves[i];
 
         apply_move(board, who, move);
-        if (pvariation || ply == 1) {
-            score = -search(board, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
-        } else {
-            score = -search(board, &temp, move, depth - 10, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
-            if (!out_of_time && score >= alpha && score < beta)
-                score = -search(board, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
+        int skip_deep_search = 0;
+        if (i > 2 && depth >= 30 && beta == alpha + 1) { // && i >= nchecks && allow_prune && beta == alpha + 1 && depth >= 30 && out.moves[i].captured == -1
+                // && out.moves[i].promotion == out.moves[i].piece) {
+            score = -search(board, timer, &temp, move, depth - 20, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
+            if (score <= alpha) {
+                skip_deep_search = 1;
+                alpha_cutoff_count += 1;
+            }
+        }
+
+        if (!skip_deep_search) {
+            if (pvariation || ply == 1) {
+                score = -search(board, timer, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
+            } else {
+                score = -search(board, timer, &temp, move, depth - 10, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
+                if (!out_of_time && score >= alpha && score < beta)
+                    score = -search(board, timer, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
+            }
         }
         reverse_move(board, who, move);
         if (out_of_time) {
@@ -654,19 +658,13 @@ CLEANUP1:
 
 int prev_score[2];
 
-move_t find_best_move(struct board* board, char who, int maxt, char flags) {
+move_t find_best_move(struct board* board, struct timer* timer, char who, char flags) {
+    signal_stop = 0;
     out_of_time = 0;
     int alpha, beta;
     int d, s;
     move_t best, temp;
-
-    max_thinking_time = maxt * CLOCKS_PER_SEC;
-
-    if (!(flags & FLAGS_DYNAMIC_DEPTH)) {
-        max_thinking_time = 1000 * CLOCKS_PER_SEC;
-    }
-
-    start = clock();
+    clock_t start = clock();
 
     alpha_cutoff_count = 0;
     beta_cutoff_count = 0;
@@ -682,6 +680,8 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
         10, 10, 10, 10, 10, 10, 10, 10,
     };
 
+    timer_start(timer);
+
     if ((flags & FLAGS_USE_OPENING_TABLE) &&
             opening_table_read(board->hash, &best) == 0) {
         fprintf(stderr, "Applying opening...\n");
@@ -690,7 +690,7 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
         ply = 0;
         // Analyze this position so that when we leave the opening,
         // we have some entries in the transposition table
-        s = search(board, &temp, NULL, 60, alpha, beta, 30, 0 /* null-mode */, 1 - who);
+        s = search(board, timer, &temp, NULL, 60, alpha, beta, 30, 0 /* null-mode */, 1 - who);
         reverse_move(board, who, &best);
     } else {
         move_t temp;
@@ -704,11 +704,11 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
 
         ply = 0;
         // A depth-4 search should always be accomplishable within the time limit
-        s = search(board, &best, NULL, 40, -INFINITY, INFINITY, 0, 0 /* null-mode */, who);
+        s = search(board, timer, &best, NULL, 40, -INFINITY, INFINITY, 0, 0 /* null-mode */, who);
         prev_score[who] = s;
         temp = best;
         // Iterative deepening
-        for ( d = 60; d < maxdepth; d += 20) {
+        for ( d = 60; d < maxdepth; d += 10) {
             // Aspirated search: we hope that the score is between alpha and beta.
             // If so, then we have greatly increased search speed.
             // If not, we have to restart search
@@ -718,7 +718,7 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
             int changeb = leeway_table[(d-60)/10];
             while (1) {
                 ply = 0;
-                s = search(board, &best, NULL, d, alpha, beta, 50, 0 /* null-mode */, who);
+                s = search(board, timer, &best, NULL, d, alpha, beta, 50, 0 /* null-mode */, who);
                 if (out_of_time) {
                     break;
                 }
@@ -743,6 +743,7 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
             }
             else {
                 prev_score[who] = s;
+                timer_advise(timer, !move_equal(temp, best));
                 temp = best;
                 if (flags & FLAGS_UCI_MODE) {
                     printf("info depth %d ", d / 10);
@@ -779,5 +780,5 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
 }
 
 void search_stop() {
-    max_thinking_time = 0;
+    signal_stop = 1;
 }

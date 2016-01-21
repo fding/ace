@@ -15,13 +15,18 @@
 #include <getopt.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "ace.h"
 
 static struct option long_options[] = {
     {"white",  required_argument, 0, 'w'},
     {"black",  required_argument, 0, 'b'},
-    {"depth",  required_argument, 0, 'd'},
+    {"wtime",  required_argument, 0, 1},
+    {"btime",  required_argument, 0, 2},
+    {"winc",  required_argument, 0, 3},
+    {"binc",  required_argument, 0, 4},
+    {"movestogo",  required_argument, 0, 5},
     {"starting",  required_argument, 0, 's'},
     {0, 0, 0, 0}
 };
@@ -30,6 +35,14 @@ int main(int argc, char* argv[]) {
     char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     int c;
     int whitecomp, blackcomp;
+    
+    int wtime, btime, winc, binc, moves_to_go;
+    wtime = 60000 * 5;
+    btime = 60000 * 5;
+    winc = 100;
+    binc = 100;
+    moves_to_go = 0;
+
     int depth = 7;
     whitecomp = 0;
     blackcomp = 0;
@@ -80,6 +93,21 @@ int main(int argc, char* argv[]) {
                 break;
             case '?':
                 break;
+            case 1:
+                wtime = atoi(optarg);
+                break;
+            case 2:
+                btime = atoi(optarg);
+                break;
+            case 3:
+                winc = atoi(optarg);
+                break;
+            case 4:
+                binc = atoi(optarg);
+                break;
+            case 5:
+                moves_to_go = atoi(optarg);
+                break;
   
             default:
                 abort ();
@@ -92,17 +120,28 @@ int main(int argc, char* argv[]) {
     else fprintf(stderr, "white player as human and ");
     if (blackcomp) fprintf(stderr, " black player as computer. \n");
     else fprintf(stderr, " black player as human. \n");
+        fprintf(stderr, "White has %d ms, Black has %d ms\n", wtime, btime);
 
     engine_init(depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
 
     engine_new_game_from_position(position);
     int should_play[2] = {whitecomp, blackcomp};
     while (!engine_won()) {
+        if (engine_get_who()) {
+            btime += binc;
+        } else {
+            wtime += winc;
+        }
+        clock_t start = clock();
         fprintf(stderr, "\n\n");
         engine_print();
         fflush(stderr);
-        if (should_play[engine_get_who()])
-            engine_play();
+        if (should_play[engine_get_who()]) {
+            char move[8];
+            engine_search(move, 0, wtime, btime, winc, binc, moves_to_go);
+            engine_move(move);
+            printf("%s\n", move);
+        }
         else {
             while (1) {
                 if (scanf("%s", buffer) < 1) {
@@ -117,6 +156,13 @@ int main(int argc, char* argv[]) {
                 fprintf(stderr, "Invalid move!\n");
             }
         }
+        int elapsed = (clock() - start) * 1000 / CLOCKS_PER_SEC;
+        if (1 - engine_get_who()) {
+            btime -= elapsed;
+        } else {
+            wtime -= elapsed;
+        }
+        fprintf(stderr, "White has %d ms, Black has %d ms\n", wtime, btime);
     }
 
     engine_print();

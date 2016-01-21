@@ -28,7 +28,9 @@ int main(int argc, char* argv[]) {
     engine_new_game();
     for (i = 0; i < 20; i++) {
         printf("Move %d\n", i);
-        engine_play();
+        char move[8];
+        engine_search(move, 1, 0, 0, 0, 0, 0);
+        engine_move(move);
     }
     clock_t end = clock();
     printf("Time: %lu milliseconds\n", (end - start) * 1000 / CLOCKS_PER_SEC);

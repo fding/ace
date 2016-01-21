@@ -255,7 +255,8 @@ void engine_stop_search() {
     search_stop();
 }
 
-int engine_ponder() {
+int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc, int binc, int moves_to_go) {
+    move[0] = 0;
     if (global_state.won) return global_state.won;
     struct deltaset mvs;
     generate_moves(&mvs, &global_state.curboard, global_state.current_side);
@@ -268,38 +269,20 @@ int engine_ponder() {
         return global_state.won;
     }
 
-    find_best_move(&global_state.curboard, global_state.current_side, 86400, global_state.flags);
+    struct timer* timer;
+    if (infinite_mode)
+        timer = new_infinite_timer();
+    else
+        timer = new_timer(wtime, btime, winc, binc, moves_to_go, global_state.current_side);
+
+    move_t ret = find_best_move(&global_state.curboard, timer, global_state.current_side, global_state.flags);
+    if (global_state.flags & FLAGS_UCI_MODE)
+        move_to_algebraic(engine_get_board(), move, &ret);
+    else
+        move_to_calgebraic(engine_get_board(), move, &ret);
+
+    free(timer);
     return global_state.won;
-}
-
-int engine_play() {
-    if (global_state.won) return global_state.won;
-    struct deltaset mvs;
-    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
-    int nmoves = mvs.nmoves;
-    if (nmoves == 0) {
-        if (mvs.check)
-            global_state.won = 3 - global_state.current_side;
-        else if (nmoves == 0)
-            global_state.won = 1;
-        return global_state.won;
-    }
-
-    clock_t start = clock();
-
-    move_t move = find_best_move(&global_state.curboard, global_state.current_side, global_state.max_thinking_time, global_state.flags);
-    char buffer[8];
-    if (global_state.flags & FLAGS_UCI_MODE) {
-        move_to_algebraic(&global_state.curboard, buffer, &move);
-        printf("bestmove %s\n", buffer);
-    }
-    else {
-        move_to_calgebraic(&global_state.curboard, buffer, &move);
-        printf("%s\n", buffer);
-    }
-    fflush(stdout);
-    fprintf(stderr, "Spent %lu milliseconds for move %s\n", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
-    return engine_move_internal(move);
 }
 
 int engine_move(char * buffer) {

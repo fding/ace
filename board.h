@@ -6,6 +6,7 @@
 #include "ace.h"
 
 #include "util.h"
+#include "timer.h"
 
 #define AFILE 0x0101010101010101ull
 #define HFILE 0x8080808080808080ull
