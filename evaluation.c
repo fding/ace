@@ -50,14 +50,14 @@ int pawn_table_endgame[64] = {
 };
 
 int knight_table[64] = {
-    -20, -15, -15, -15, -15, -15, -15, -20,
-     0,  10,  10,  10,  10,  10,  10,  0,
-     0,  10,  30,  40,  40,  30,  10,  0,
-    -10, 0,  25,  35,  35,  25, 0, -10,
-    -10, 0,  20,  30,  30,  20, 0, -10,
-    -15, 0,  15,  15,  15,  15, 0, -15,
-    -20, -10, -10, -10, -10, -10, -10, -20,
     -30, -15, -15, -15, -15, -15, -15, -30,
+     -10,  0,  10,  10,  10,  10,  0,  -10,
+     0,  10,  30,  40,  40,  30,  10,  0,
+    -10, 15,  25,  35,  35,  25, 15, -10,
+    -10, 10,  20,  30,  30,  20, 10, -10,
+    -15, 10,  15,  15,  15,  15, 10, -15,
+    -20, -10, -10, -10, -10, -10, -10, -20,
+    -40, -20, -15, -15, -15, -15, -20, -40,
 
 };
 
@@ -294,8 +294,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             // Outposts are good
             if ((1ull << square) & outposts[w]) subscore += 35;
             uint64_t attack_mask = attack_set_knight(square, pieces[w], pieces[1 - w]);
-            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
-            subscore += 2 * bitmap_count_ones(attack_mask);
+            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 3 * bitmap_count_ones(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -321,8 +321,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             count += 1;
             if ((1ull << square) & outposts[w]) subscore += 20;
             uint64_t attack_mask = attack_set_bishop(square, pieces[w], pieces[1 - w]);
-            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
-            subscore += 2 * bitmap_count_ones(attack_mask);
+            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 3 * bitmap_count_ones(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -369,7 +369,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             if ((AFILE << file) & (majors[w] ^ (1ull << square)))
                 subscore += 25;
             uint64_t attack_mask = attack_set_rook(square, pieces[w], pieces[1 - w]);
-            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 2 * bitmap_count_ones(attack_mask);
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
@@ -401,7 +402,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
                 subscore += 30;
 
             uint64_t attack_mask = attack_set_queen(square, pieces[w], pieces[1 - w]);
-            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += 1 * bitmap_count_ones(attack_mask);
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {

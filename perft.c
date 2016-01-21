@@ -104,7 +104,8 @@ int main(int argc, char* argv[]) {
           }
     }
 
-    engine_init_from_position(position, depth, 0);
+    engine_init(0, 0);
+    engine_new_game_from_position(position);
     engine_print();
     clock_t start = clock();
     uint64_t count, enpassants, captures, check, promotions, castles;

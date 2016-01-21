@@ -11,89 +11,33 @@
 
 // Transposition table code
 #define HASHMASK1 ((1ull << 26) - 1)
-#define HASHMASK2 (((1ull << 52) - 1) & ~HASHMASK1)
+#define HASHMASK2 ((1ull << 58) - 1)
 
-static int is_checkmate(int score) {
-    return (score > CHECKMATE - 1200) || (score < -CHECKMATE + 1200);
-}
+#define ALPHA_CUTOFF 1
+#define BETA_CUTOFF 2
+#define EXACT 4
+#define MOVESTORED 8
+
+// We only need to copy the first 8 bytes of m2 to m1, and this can be done in one operation
+#define move_copy(m1, m2) (*((struct delta_compressed *) (m1)) = *((struct delta_compressed *) (m2)))
+
+// Statistics
 
 int tt_hits = 0;
 int tt_tot = 0;
-
-static void transposition_table_update_with_hash(int loc, struct transposition * update, int count) {
-    if (transposition_table[loc].valid) {
-        if (transposition_table[loc].hash == update->hash) {
-            if (update->depth > transposition_table[loc].depth)
-                transposition_table[loc] = *update;
-            transposition_table[loc].valid = update->valid;
-        }
-        else {
-#ifdef CUCKOO_HASHING
-            if (count < 8) {
-                int hash1 = transposition_table[loc].hash & HASHMASK1;
-                int hash2 = (transposition_table[loc].hash & HASHMASK2) >> 26;
-                struct transposition trans = transposition_table[loc];
-                if (hash1 != loc)
-                    transposition_table_update_with_hash(hash1, &trans, count + 1);
-                else if (hash2 != loc)
-                    transposition_table_update_with_hash(hash2, &trans, count + 1);
-            }
-#endif
-            if (transposition_table[loc].depth + 1 * transposition_table[loc].age < update->depth + 1 * update->age)
-                transposition_table[loc] = *update;
-        }
-    }
-    else {
-        transposition_table[loc] = *update;
-    }
-}
-
-static void transposition_table_update(struct transposition * update) {
-    int hash1 = HASHMASK1 & update->hash;
-#ifdef CUCKOO_HASHING
-    if (transposition_table[hash1].hash != update->hash) {
-        uint64_t hash2 = (HASHMASK2 & update->hash) >> 26;
-        transposition_table_update_with_hash(hash2, update, 0);
-    }
-    else {
-#endif
-        transposition_table_update_with_hash(hash1, update, 0);
-#ifdef CUCKOO_HASHING
-    }
-#endif
-}
-
-static int transposition_table_read(uint64_t hash, struct transposition** value) {
-    int hash1 = HASHMASK1 & hash;
-    tt_tot += 1;
-    if (transposition_table[hash1].hash == hash) {
-        *value = &transposition_table[hash1];
-        tt_hits += 1;
-        return 0;
-    }
-#ifdef CUCKOO_HASHING
-    else {
-        uint64_t hash2 = (HASHMASK2 & hash) >> 26;
-        if (transposition_table[hash2].hash == hash) {
-            *value = &transposition_table[hash2];
-            tt_hits += 1;
-            return 0;
-        }
-    }
-#endif
-    return -1;
-}
-
 int alpha_cutoff_count = 0;
 int beta_cutoff_count = 0;
 int short_circuit_count = 0;
 int branches = 0;
+
+// Global state
+
+int ply;
 int out_of_time = 0;
 clock_t start;
 int max_thinking_time = 0;
 
 int material_table[5] = {100, 510, 325, 333, 900};
-
 
 struct killer_slot {
     move_t m1;
@@ -101,39 +45,72 @@ struct killer_slot {
 };
 
 struct killer_slot killer[32];
-
 uint64_t seen[64];
-int ply;
-
 int history[2][64][64];
 
-static void print_position_table() {
-    int sums[64];
-    for (int i = 0; i < 64; i++)
-        sums[i] = 0;
-    for (int i = 0; i < 2; i++) {
-        for (int j = 0; j < 64; j++)
-            for (int k = 0; k < 64; k++) 
-                sums[k] += history[i][j][k];
-    }
-    for (int i = 7; i >= 0; i--) {
-        for (int j = 0; j < 8; j++) {
-            fprintf(stderr, "%d ", sums[8*i+j]);
+static int is_checkmate(int score) {
+    return (score > CHECKMATE - 1200) || (score < -CHECKMATE + 1200);
+}
+
+// Transposition table probing and updating
+
+static void transposition_table_update_with_hash(int loc, union transposition * update, int count) {
+    if (transposition_table[loc].metadata.type) {
+        int should_replace = (!(transposition_table[loc].metadata.type & MOVESTORED) && (update->metadata.type & MOVESTORED)) ||
+            (!(transposition_table[loc].metadata.type & EXACT) && (update->metadata.type & EXACT));
+        if (transposition_table[loc].metadata.hash == update->metadata.hash) {
+            if (should_replace || update->metadata.depth > transposition_table[loc].metadata.depth)
+                transposition_table[loc] = *update;
         }
-        fprintf(stderr, "\n");
+        else {
+            if (should_replace || 
+                    4 * transposition_table[loc].metadata.depth + 1 * transposition_table[loc].metadata.age < 4 * update->metadata.depth + 1 * update->metadata.age) {
+                transposition_table[loc] = *update;
+            }
+        }
+    }
+    else {
+        transposition_table[loc] = *update;
     }
 }
 
-static int sort_deltaset(struct board* board, char who, struct deltaset* set, move_t* tablemove);
-int search(struct board* board, move_t* restrict best, move_t* restrict prev, int depth, int alpha, int beta, int extensions, 
-        int nullmode, char who);
+static void transposition_table_update(uint64_t hash, union transposition * update) {
+    int hash1 = HASHMASK1 & hash;
+    update->metadata.hash = hash >> 32;
+    transposition_table_update_with_hash(hash1, update, 0);
+}
 
-static int transposition_table_search(struct board* board, struct deltaset* set, int depth, move_t* best, move_t* move,
-        int * alpha, int beta);
+static int transposition_table_read(uint64_t hash, union transposition** value) {
+    int hash1 = HASHMASK1 & hash;
+    uint32_t hash2 = hash >> 32;
+    tt_tot += 1;
+    if (transposition_table[hash1].metadata.hash == hash2) {
+        *value = &transposition_table[hash1];
+        tt_hits += 1;
+        return 0;
+    }
+    return -1;
+}
 
-// We only need to copy the first 8 bytes of m2 to m1, and this can be done in one operation
-#define move_copy(m1, m2) (*((struct delta_compressed *) (m1)) = *((struct delta_compressed *) (m2)))
+// Print principal variation
+static void print_pv(struct board* board, int depth) {
+    union transposition* stored;
+    char buffer[8];
+    move_t move;
+    if (depth == 0) return;
+    if (transposition_table_read(board->hash, &stored) == 0) {
+        if (stored->metadata.type & MOVESTORED) {
+            move_copy(&move, &stored->move);
+            move_to_algebraic(board, buffer, &move);
+            printf(" %s", buffer);
+            apply_move(board, board->who, &move);
+            print_pv(board, depth - 1);
+            reverse_move(board, 1-board->who, &move);
+        }
+    }
+}
 
+// Update killers for given ply
 static void update_killer(int ply, move_t* m) {
     if (!move_equal(*m, killer[ply].m1)) {
         move_copy(&killer[ply].m2, &killer[ply].m1);
@@ -141,8 +118,8 @@ static void update_killer(int ply, move_t* m) {
     }
 }
 
+// Stable searching algorithm
 static void insertion_sort(move_t* moves, int* scores, int start, int end) {
-    /* A stable sorting algorithm */
     int i, k, ts;
     move_t tm;
     for (i = start + 1; i < end; i++) {
@@ -157,6 +134,7 @@ static void insertion_sort(move_t* moves, int* scores, int start, int end) {
     }
 }
 
+// Static exchange evaluation for a move
 static int move_see(struct board* board, struct deltaset* set, move_t* move) {
     int score = 0;
     if ((1ull << move->square2) & set->opponent_attacks)
@@ -198,12 +176,6 @@ static int sort_deltaset_qsearch(struct board* board, char who, struct deltaset*
             scores[i] += 500;
     }
 
-    // Sort the moves based on score of following position
-    // This will move the checkmates to the front of the list,
-    // immediately followed by check giving moves
-    // All other moves are also sorted,
-    // but later on, they will be scrambled.
-    // However, this preliminary sort will help break ties
     insertion_sort(set->moves, scores, 0, set->nmoves);
 
     return set->nmoves;
@@ -240,12 +212,6 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
     }
     int nchecks = k;
 
-    // Sort the moves based on score of following position
-    // This will move the checkmates to the front of the list,
-    // immediately followed by check giving moves
-    // All other moves are also sorted,
-    // but later on, they will be scrambled.
-    // However, this preliminary sort will help break ties
     insertion_sort(set->moves, scores, 0, set->nmoves);
 
     int start = k;
@@ -284,53 +250,49 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
         }
     }
 
+    // History table
     for (i = k; i < set->nmoves; i++) {
         scores[i] = history[who][set->moves[i].square1][set->moves[i].square2];
     }
+
     insertion_sort(set->moves, scores, k, set->nmoves);
     return nchecks;
 }
 
-#define ALPHA_CUTOFF 1
-#define BETA_CUTOFF 2
-#define EXACT 4
-#define MOVESTORED 8
-
-static int transform_checkmate(struct board* board, struct transposition* trans) {
-    if (trans->score > CHECKMATE - 1200) {
-        return trans->score + trans->age - board->nmoves;
+static int transform_checkmate(struct board* board, union transposition* trans) {
+    if (trans->metadata.score > CHECKMATE - 1200) {
+        return trans->metadata.score + trans->metadata.age - board->nmoves;
     }
-    else if (trans->score < -CHECKMATE + 1200) {
-        return trans->score - trans->age + board->nmoves;
+    else if (trans->metadata.score < -CHECKMATE + 1200) {
+        return trans->metadata.score - trans->metadata.age + board->nmoves;
     }
-    return trans->score;
+    return trans->metadata.score;
 }
 
 static int transposition_table_search(struct board* board, struct deltaset* set, int depth, move_t* best, move_t* move, int * alpha, int beta) {
-    struct transposition * stored;
+    union transposition * stored;
     int score;
     move->piece = -1;
-    if (transposition_table_read(board->hash, &stored) == 0 && position_count_table_read(board->hash) < 1 && ply > 1) {
+    // TODO: do we need ply > 1?
+    if (transposition_table_read(board->hash, &stored) == 0 && position_count_table_read(board->hash) < 1) {
         score = transform_checkmate(board, stored);
-        if (stored->depth >= depth) {
-            if ((stored->type & EXACT)) {
+        if (stored->metadata.depth >= depth) {
+            if ((stored->metadata.type & EXACT)) {
                 move_copy(best, &stored->move);
-                // *best = set->moves[stored->move];
                 *alpha = score;
                 return 0;
             } 
-            if ((stored->type & ALPHA_CUTOFF) && score <= *alpha) {
+            if ((stored->metadata.type & ALPHA_CUTOFF) && score <= *alpha) {
                 *alpha = score;
                 return 0;
             }
-            if ((stored->type & BETA_CUTOFF) && score >= beta) {
+            if ((stored->metadata.type & BETA_CUTOFF) && score >= beta) {
                 *alpha = score;
                 return 0;
             }
         } 
-        if (stored->type & MOVESTORED) {
+        if (stored->metadata.type & MOVESTORED) {
             move_copy(move, &stored->move);
-            // *move = set->moves[stored->move];
             return 1;
         }
     }
@@ -347,7 +309,7 @@ int qsearch(struct board* board, int depth, int alpha, int beta, char who) {
     struct deltaset out;
     int score = 0;
     int i = 0;
-    struct transposition * stored;
+    union transposition * stored;
 
     // Check if we are out of time. If so, abort
     // Since clock() is costly, don't do this all the time!
@@ -374,8 +336,8 @@ int qsearch(struct board* board, int depth, int alpha, int beta, char who) {
     // and if not, using the static evaluation function
     if (transposition_table_read(board->hash, &stored) == 0) {
         score = transform_checkmate(board, stored);
-        if (!(stored->type & EXACT) && !((stored->type & ALPHA_CUTOFF) && score <= alpha) &&
-             !((stored->type & BETA_CUTOFF) && score >=beta)) {
+        if (!(stored->metadata.type & EXACT) && !((stored->metadata.type & ALPHA_CUTOFF) && score <= alpha) &&
+             !((stored->metadata.type & BETA_CUTOFF) && score >=beta)) {
             score = board_score(board, who, &out1, alpha, beta);
             if (who) score = -score;
         }
@@ -451,6 +413,9 @@ int futility_margin[7] = {0, 100, 200, 300, 500, 900, 1200};
 
 int search(struct board* board, move_t* restrict best, move_t* restrict prev,
         int depth, int alpha, int beta, int extensions, int nullmode, char who) {
+
+    // Checkmate pruning: if we found a mate in n in another branch, and we are n+1 away from root,
+    // no need to consider the current node
     if (ply != 0) {
         alpha = MAX(alpha, -CHECKMATE + board->nmoves);
         beta = MIN(beta, CHECKMATE - board->nmoves - 1);
@@ -458,17 +423,26 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
     }
 
     struct deltaset out;
-    struct transposition transposition;
+    union transposition transposition;
     move_t temp;
     int score = 0;
     int i = 0;
     int extended = 0;
     char pvariation = 1;
+    int type = ALPHA_CUTOFF;
     branches += 1;
 
     // Mark it as invalid, in case we return prematurely (due to time limit)
     best->piece = -1; 
 
+    // Detect cycles, which result in a drawn position
+    for (i = 0; i < ply; i++) {
+        if (board->hash == seen[i]) {
+            return 0;
+        }
+    }
+    seen[ply] = board->hash;
+    ply++;
 
     // Check if we are out of time. If so, abort
     // Since clock() is costly, don't do this all the time!
@@ -483,20 +457,9 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
 
     int nmoves = 0;
 
-    // If alpha is never changed, we get an alpha cutoff on this node
-    transposition.type = ALPHA_CUTOFF;
-    transposition.hash = board->hash;
-    transposition.age = board->nmoves;
-    transposition.valid = 1;
-    transposition.score = alpha;
-
     generate_moves(&out, board, who);
 
     nmoves = out.nmoves;
-
-    int initial_score = 0;
-    initial_score = board_score(board, who, &out, alpha, beta);
-    if (who) initial_score = -initial_score;
 
     if (extensions > 0 && !nullmode) {
         if (out.check) {
@@ -535,26 +498,21 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
         }
     }
     
+    int initial_score = 0;
     // Terminal condition: no more moves are left, or we run out of depth
     if (depth < 10 || nmoves == 0) {
         if (nmoves == 0) {
+            initial_score = board_score(board, who, &out, alpha, beta);
+            if (who) initial_score = -initial_score;
+            ply--;
             return initial_score;
         }
 
         score = qsearch(board, 300, alpha, beta, who);
+        ply--;
         return score;
     }
 
-    // Detect cycles, which result in a drawn position
-    for (i = 0; i < ply; i++) {
-        if (board->hash == seen[i]) {
-            return 0;
-        }
-    }
-    seen[ply] = board->hash;
-    ply++;
-
-    transposition.depth = depth;
 
     move_t tablemove;
     tablemove.piece = -1;
@@ -565,8 +523,12 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
     // the stored move is probably good, so we can improve the pruning
     int res = transposition_table_search(board, &out, depth, best, &tablemove, &alpha, beta);
     if (res == 0) {
-        goto CLEANUP1;
+        ply--;
+        return alpha;
     }
+
+    initial_score = board_score(board, who, &out, alpha, beta);
+    if (who) initial_score = -initial_score;
 
     // Razoring (TODO: check if a pawn is promotable)
     if (depth < 30 && !out.check && nmoves > 1 && beta == alpha + 1 && initial_score + 600 <= alpha && tablemove.piece == -1) {
@@ -599,6 +561,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
             if (score > CHECKMATE/2) {
                 extensions -= 5;
                 depth += 10;
+                extended = 1;
             }
         }
     }
@@ -610,7 +573,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
 
     int nchecks = sort_deltaset(board, who, &out, &tablemove);
 
-    int allow_prune = !out.check && (nmoves > 6);
+    int allow_prune = !out.check && (nmoves > 6) && !extended;
     int late_move = out.nmoves / 2;
     for (i = 0; i < out.nmoves; i++) {
         if (out.moves[i].captured != -1 && depth <= 20 && allow_prune) {
@@ -625,7 +588,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
         // because our move can only increase the positional scores,
         // which is not that large of a factor
         // TODO: more agressive pruning. If ply>7 and depth<=20, also prune with delta_cutoff=500
-        if (out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece && i >= nchecks && (depth <= 60)
+        if (out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece && i >= nchecks && depth <= 60
                 && alpha > -CHECKMATE/2 && beta < CHECKMATE/2 && allow_prune) {
             if (initial_score + futility_margin[depth / 10] < alpha) {
                 continue;
@@ -645,24 +608,22 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
         move_t * move = &out.moves[i];
 
         apply_move(board, who, move);
-        int s;
         if (pvariation || ply == 1) {
-            s = -search(board, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
+            score = -search(board, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
         } else {
-            s = -search(board, &temp, move, depth - 10, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
-            if (!out_of_time && s >= alpha && s < beta)
-                s = -search(board, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
+            score = -search(board, &temp, move, depth - 10, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
+            if (!out_of_time && score >= alpha && score < beta)
+                score = -search(board, &temp, move, depth - 10, -beta, -alpha, extensions, nullmode, 1 - who);
         }
         reverse_move(board, who, move);
         if (out_of_time) {
             return alpha;
         }
-        if (alpha < s) {
-            alpha = s;
+        if (alpha < score) {
+            alpha = score;
             move_copy(best, move);
             move_copy(&transposition.move, move);
-            transposition.type = EXACT | MOVESTORED;
-            transposition.score = s;
+            type = EXACT | MOVESTORED;
             pvariation = 0;
             history[who][move->square1][move->square2] += depth / 8;
         }
@@ -670,7 +631,7 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
             beta_cutoff_count += 1;
             if (move->captured == -1)
                 update_killer(ply, move);
-            transposition.type = BETA_CUTOFF | MOVESTORED;
+            type = BETA_CUTOFF | MOVESTORED;
             goto CLEANUP1;
         }
     }
@@ -678,7 +639,16 @@ int search(struct board* board, move_t* restrict best, move_t* restrict prev,
 CLEANUP1:
     ply--;
     if (out_of_time) return alpha;
-    transposition_table_update(&transposition);
+
+    transposition.metadata.type = type;
+    transposition.metadata.age = board->nmoves;
+    transposition.metadata.score = alpha;
+    transposition.metadata.depth = depth;
+
+    if (best->piece != -1)
+        assert(move_equal(*best, transposition.move));
+
+    transposition_table_update(board->hash, &transposition);
     return alpha;
 }
 
@@ -695,9 +665,6 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
     if (!(flags & FLAGS_DYNAMIC_DEPTH)) {
         max_thinking_time = 1000 * CLOCKS_PER_SEC;
     }
-
-    struct deltaset out;
-    generate_moves(&out, board, who);
 
     start = clock();
 
@@ -745,7 +712,6 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
             // Aspirated search: we hope that the score is between alpha and beta.
             // If so, then we have greatly increased search speed.
             // If not, we have to restart search
-            struct transposition * stored;
             alpha = prev_score[who] - leeway_table[(d-60)/10];
             beta = prev_score[who] + leeway_table[(d-60)/10];
             int changea = leeway_table[(d-60)/10];
@@ -769,13 +735,31 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
                 }
             }
             if (out_of_time) {
-                best = temp;
+                if (best.piece == -1)
+                    best = temp;
                 s = prev_score[who];
+                /* best = temp; */
                 break;
             }
             else {
                 prev_score[who] = s;
                 temp = best;
+                if (flags & FLAGS_UCI_MODE) {
+                    printf("info depth %d ", d / 10);
+                    printf("score ");
+                    if (is_checkmate(s)) {
+                        if (s > 0)
+                            printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
+                        else
+                            printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
+                    }
+                    else {
+                        printf("cp %d ", s);
+                    }
+                    printf("time %lu pv", (clock() - start) * 1000 / CLOCKS_PER_SEC);
+                    print_pv(board, d/10);
+                    printf("\n");
+                }
                 if (s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
                     break;
                 }
@@ -787,10 +771,13 @@ move_t find_best_move(struct board* board, char who, int maxt, char flags) {
     move_to_algebraic(board, buffer, &best);
 
     assert(best.piece != -1);
-    move_to_algebraic(board, buffer, &best);
+    move_to_calgebraic(board, buffer, &best);
     fprintf(stderr, "Best scoring move is %s: %.2f\n", buffer, s/100.0);
     fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d, depth: %d, TT hits: %.5f\n",
             branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d-20, tt_hits/((float) tt_tot));
-    print_position_table();
     return best;
+}
+
+void search_stop() {
+    max_thinking_time = 0;
 }

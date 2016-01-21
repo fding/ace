@@ -27,7 +27,7 @@ extern uint64_t square_hash_codes[64][12];
 extern uint64_t castling_hash_codes[4];
 extern uint64_t enpassant_hash_codes[8];
 extern uint64_t side_hash_code;
-extern struct transposition* transposition_table;
+extern union transposition* transposition_table;
 
 typedef int16_t piece_t;
 
@@ -83,18 +83,22 @@ typedef struct delta move_t;
  * 1 byte age
  * 1 byte depth
  */
-struct transposition {
-    uint64_t hash;
-    int16_t score;
-    char type;
-    char valid;
-    int16_t age;
-    char depth;
-    // 16 bytes
-    // char move;
-    struct delta_compressed move;
-    // Make the size of each entry divide 64 for cache performance
-    uint64_t padding;
+union transposition {
+    move_t move;
+    struct {
+        unsigned char square1;
+        unsigned char square2;
+        char piece;
+        char captured;
+        char promotion;
+        char misc;
+        int16_t score;
+        // 8 byte alignment
+        uint32_t hash;
+        char type;
+        char depth;
+        int16_t age;
+    } metadata;
 };
 
 struct opening_entry {
@@ -127,6 +131,8 @@ void board_to_fen(struct board* out, char* fen);
 int move_equal(move_t m1, move_t m2);
 int algebraic_to_move(char* input, struct board* board, move_t* move);
 void move_to_algebraic(struct board* board, char* buffer, struct delta* move);
+void calgebraic_to_move(char* input, struct board* board, move_t* move);
+void move_to_calgebraic(struct board* board, char* buffer, struct delta* move);
 
 /* Scoring */
 int board_score(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta);
@@ -146,6 +152,7 @@ uint64_t is_in_check(struct board* board, int who, uint64_t friendly_occupancy, 
 uint64_t is_in_check_slider(struct board* board, int who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 char get_piece_on_square(struct board* board, int square);
 uint64_t attacked_squares(struct board* board, unsigned char who, uint64_t occ);
+int gives_check(struct board * board, uint64_t occupancy, move_t* move, int who);
 
 /* Repeated position detection */
 int position_count_table_read(uint64_t hash);

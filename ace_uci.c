@@ -3,13 +3,32 @@
 #include <string.h>
 #include "ace.h"
 
+#include <pthread.h>
+#include <semaphore.h>
+
+sem_t available_threads;
+pthread_t search_thread;
+void* launch_search_thread(void * argument) {
+    (void) argument;
+    engine_play();
+    sem_post(&available_threads);
+}
+void* launch_ponder_thread(void * argument) {
+    (void) argument;
+    engine_ponder();
+    sem_post(&available_threads);
+}
+
 int main() {
     setbuf(stdout, NULL);
     setbuf(stdin, NULL);
     char *buffer = malloc(4046);
+    sem_init(&available_threads, 0, 1);
     size_t n;
     memset(buffer, 0, 4096);
     FILE * f = fopen("log.txt", "a");
+
+    engine_init(7, FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
     while (getline(&buffer, &n, stdin) > 0) {
         fprintf(f, "%s", buffer);
         fflush(f);
@@ -42,7 +61,7 @@ int main() {
                 break;
             }
             else if (strcmp(token, "ucinewgame") == 0) {
-                engine_init(7, FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+                engine_new_game();
                 break;
             }
             else if (strcmp(token, "position") == 0) {
@@ -55,13 +74,13 @@ int main() {
                 pos = token;
                 if (strcmp(token, "startpos") == 0) {
                     pos = pos + 8;
-                    engine_init(7, FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+                    engine_new_game();
                     *pos = temp;
                 } else {
                     pos = token + 4;
                     while (*pos && *pos == ' ') pos++;
                     if (!(*pos)) break;
-                    pos = engine_init_from_position(pos, 7, FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+                    pos = engine_new_game_from_position(pos);
                 }
                 token = strtok(pos, " ");
                 if (!token) break;
@@ -69,21 +88,28 @@ int main() {
                 while ((token = strtok(NULL, " "))) {
                     if (engine_move(token))
                         fprintf(stderr, "Bad move: %s\n", token);
-                    engine_print();
                 }
                 break;
             }
             else if (strcmp(token, "go") == 0) {
-                engine_print();
                 token = strtok(NULL, " ");
-                if (token != NULL && strcmp(token, "ponder") == 0) break;
-                engine_play();
+                if (token != NULL && strcmp(token, "ponder") == 0) {
+                    engine_stop_search();
+                    pthread_create(&search_thread, NULL, launch_ponder_thread, NULL);
+                    pthread_detach(search_thread);
+                    break;
+                }
+                engine_stop_search();
+                sem_wait(&available_threads);
+                pthread_create(&search_thread, NULL, launch_search_thread, NULL);
+                pthread_detach(search_thread);
                 break;
             }
             else if (strcmp(token, "eath") == 0) {
                 break;
             }
             else if (strcmp(token, "stop") == 0) {
+                engine_stop_search();
                 break;
             }
             else if (strcmp(token, "ponderhit") == 0) {

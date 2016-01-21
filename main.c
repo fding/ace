@@ -93,7 +93,9 @@ int main(int argc, char* argv[]) {
     if (blackcomp) fprintf(stderr, " black player as computer. \n");
     else fprintf(stderr, " black player as human. \n");
 
-    engine_init_from_position(position, depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    engine_init(depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+
+    engine_new_game_from_position(position);
     int should_play[2] = {whitecomp, blackcomp};
     while (!engine_won()) {
         fprintf(stderr, "\n\n");

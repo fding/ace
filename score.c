@@ -50,7 +50,8 @@ int main(int argc, char* argv[]) {
                 abort ();
           }
     }
-    engine_init_from_position(position, 0, 0);
+    engine_init();
+    engine_new_game_from_position(position);
     int score = engine_score();
     engine_print();
     printf("Score: %d\n", score);

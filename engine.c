@@ -16,7 +16,7 @@ struct state {
     char side; // which side the engine is on, 0 for white, 1 for black
     char current_side;
     char won; // 0 for undetermined, 1 for draw, 2 for white, 3 for black
-    char flags;
+    int flags;
 };
 
 struct position_count {
@@ -29,7 +29,6 @@ uint64_t square_hash_codes[64][12];
 uint64_t castling_hash_codes[4];
 uint64_t enpassant_hash_codes[8];
 uint64_t side_hash_code;
-
 
 void initialize_hash_codes(void) {
     int i, j;
@@ -51,6 +50,7 @@ void initialize_hash_codes(void) {
 }
 
 
+// Position count table: counts the number of time a position has occured in the past
 // Used for draw detection
 struct position_count position_count_table[256];
 
@@ -74,7 +74,7 @@ int position_count_table_read(uint64_t hash) {
 
 struct state global_state;
 
-struct transposition* transposition_table;
+union transposition* transposition_table;
 struct opening_entry* opening_table;
 uint64_t transposition_table_size = 0;
 
@@ -134,35 +134,36 @@ void save_opening_table(char * fname) {
     fclose(file);
 }
 
-
-void engine_init(int max_thinking_time, char flags) {
-    engine_init_from_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", max_thinking_time, flags);
-}
-
-int initialized = 0;
-
-char* engine_init_from_position(char* position, int max_thinking_time, char flags) {
-    char * pos;
+void engine_init(int max_thinking_time, int flags) {
+    static int initialized = 0;
     if (!initialized) {
         initialized = 1;
         initialize_move_tables();
         initialize_hash_codes();
-        if (posix_memalign((void **) &transposition_table, 64, 67108864 * sizeof(struct transposition))) {
+        if (posix_memalign((void **) &transposition_table, 64, 67108864 * sizeof(union transposition))) {
             exit(1);
         }
-        memset(transposition_table, 0, 67108864 * sizeof(struct transposition));
+        memset(transposition_table, 0, 67108864 * sizeof(union transposition));
         if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
             exit(1);
         if (flags & FLAGS_USE_OPENING_TABLE)
             load_opening_table("openings.acebase");
     }
+    global_state.max_thinking_time = max_thinking_time;
+    global_state.flags = flags;
+}
+
+void engine_new_game() {
+    engine_new_game_from_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+}
+
+char* engine_new_game_from_position(char* position) {
+    char * pos;
     memset(position_count_table, 0, sizeof(position_count_table));
     pos = board_init_from_fen(&global_state.curboard, position);
     global_state.current_side = global_state.curboard.who;
     global_state.side = 0;
     global_state.won = 0;
-    global_state.max_thinking_time = max_thinking_time;
-    global_state.flags = flags;
     srand(time(NULL));
     return pos;
 }
@@ -250,6 +251,27 @@ static int engine_move_internal(move_t move) {
     return 0;
 }
 
+void engine_stop_search() {
+    search_stop();
+}
+
+int engine_ponder() {
+    if (global_state.won) return global_state.won;
+    struct deltaset mvs;
+    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
+    int nmoves = mvs.nmoves;
+    if (nmoves == 0) {
+        if (mvs.check)
+            global_state.won = 3 - global_state.current_side;
+        else if (nmoves == 0)
+            global_state.won = 1;
+        return global_state.won;
+    }
+
+    find_best_move(&global_state.curboard, global_state.current_side, 86400, global_state.flags);
+    return global_state.won;
+}
+
 int engine_play() {
     if (global_state.won) return global_state.won;
     struct deltaset mvs;
@@ -282,7 +304,10 @@ int engine_play() {
 
 int engine_move(char * buffer) {
     move_t move;
-    calgebraic_to_move(buffer, engine_get_board(), &move);
+    if (global_state.flags & FLAGS_UCI_MODE)
+        algebraic_to_move(buffer, engine_get_board(), &move);
+    else
+        calgebraic_to_move(buffer, engine_get_board(), &move);
     return engine_move_internal(move);
 }
 

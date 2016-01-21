@@ -8,9 +8,12 @@
 #define FLAGS_UCI_MODE 4
 
 /* Engine functions */
-void engine_init(int depth, char flags);
-char* engine_init_from_position(char* position, int depth, char flags);
+void engine_init(int depth, int flags);
+void engine_new_game();
+char* engine_new_game_from_position(char* position);
 int engine_play();
+int engine_ponder();
+void engine_stop_search();
 int engine_move(char* move);
 struct board* engine_get_board();
 void engine_print();
