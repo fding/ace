@@ -45,7 +45,6 @@ int main(int argc, char* argv[]) {
     binc = 100;
     reset_period = 0;
 
-    int depth = 7;
     whitecomp = 0;
     blackcomp = 0;
     while (1) {
@@ -87,9 +86,6 @@ int main(int argc, char* argv[]) {
                     abort();
                 }
                 break;
-            case 'd':
-                depth = atoi(optarg);
-                break;
             case 's':
                 strcpy(position, optarg);
                 break;
@@ -123,7 +119,8 @@ int main(int argc, char* argv[]) {
     if (blackcomp) fprintf(stderr, " black player as computer. \n");
     else fprintf(stderr, " black player as human. \n");
 
-    engine_init(depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    engine_init(FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    engine_reset_hashmap(1 << 26);
 
     engine_new_game_from_position(position);
     int should_play[2] = {whitecomp, blackcomp};

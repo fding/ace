@@ -42,7 +42,8 @@ int main() {
     memset(buffer, 0, 4096);
     FILE * f = fopen("log.txt", "a");
 
-    engine_init(7, FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    engine_init(FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    engine_reset_hashmap(1 << 26);
     while (getline(&buffer, &n, stdin) > 0) {
         fprintf(f, "%s", buffer);
         fflush(f);

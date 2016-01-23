@@ -23,7 +23,8 @@ int main(int argc, char* argv[]) {
     int depth = 6;
     int i = 0;
 
-    engine_init(depth, 0);
+    engine_init(0);
+    engine_reset_hashmap(1 << 26);
     clock_t start = clock();
     engine_new_game();
     for (i = 0; i < 20; i++) {

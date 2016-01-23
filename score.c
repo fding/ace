@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
                 abort ();
           }
     }
-    engine_init(0, 0);
+    engine_init(0);
     engine_new_game_from_position(position);
     int score = engine_score();
     engine_print();

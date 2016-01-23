@@ -11,7 +11,7 @@ int main(int argc, char* argv[]) {
     size_t n = 1024;
     struct board board;
     move_t move;
-    engine_init(0, 0);
+    engine_init(0);
     n = 0;
     char * cursor;
 
@@ -40,7 +40,7 @@ int main(int argc, char* argv[]) {
                 }
                 c++;
             }
-            calgebraic_to_move(token, &board, &move);
+            calgebraic_to_move(&board, token, &move);
             if (move.piece == -1) {
                 printf("Ambiguous move (%s) in opening: %s\n", token, line);
                 break;
@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
                 break;
             }
             opening_table_update(board.hash, move, 0);
-            apply_move(&board, who, &move);
+            apply_move(&board, &move);
             who = 1-who;
             token = strtok(NULL, " ");
         }

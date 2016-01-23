@@ -99,19 +99,19 @@ int king_table_endgame[64] = {
 #define WHITE_CENTRAL_SQUARES 0x0000142814280000ull
 
 int material_for_player(struct board* board, unsigned char who) {
-    return 100 * bitmap_count_ones(board->pieces[who][PAWN]) +
-        300 * bitmap_count_ones(board->pieces[who][KNIGHT]) +
-        315 * bitmap_count_ones(board->pieces[who][BISHOP]) +
-        490 * bitmap_count_ones(board->pieces[who][ROOK]) +
-        880 * bitmap_count_ones(board->pieces[who][QUEEN]);
+    return 100 * popcnt(board->pieces[who][PAWN]) +
+        300 * popcnt(board->pieces[who][KNIGHT]) +
+        315 * popcnt(board->pieces[who][BISHOP]) +
+        490 * popcnt(board->pieces[who][ROOK]) +
+        880 * popcnt(board->pieces[who][QUEEN]);
 }
 
 int material_for_player_endgame(struct board* board, unsigned char who) {
-    return 135 * bitmap_count_ones(board->pieces[who][PAWN]) +
-        275 * bitmap_count_ones(board->pieces[who][KNIGHT]) +
-        300 * bitmap_count_ones(board->pieces[who][BISHOP]) +
-        550 * bitmap_count_ones(board->pieces[who][ROOK]) +
-        900 * bitmap_count_ones(board->pieces[who][QUEEN]);
+    return 135 * popcnt(board->pieces[who][PAWN]) +
+        275 * popcnt(board->pieces[who][KNIGHT]) +
+        300 * popcnt(board->pieces[who][BISHOP]) +
+        550 * popcnt(board->pieces[who][ROOK]) +
+        900 * popcnt(board->pieces[who][QUEEN]);
 }
 
 /* Scoring the board:
@@ -178,10 +178,10 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 
     int nminors[2], nmajors[2], endgame;
 
-    nmajors[0] = bitmap_count_ones(majors[0]);
-    nminors[0] = bitmap_count_ones(minors[0]);
-    nmajors[1] = bitmap_count_ones(majors[1]);
-    nminors[1] = bitmap_count_ones(minors[1]);
+    nmajors[0] = popcnt(majors[0]);
+    nminors[0] = popcnt(minors[0]);
+    nmajors[1] = popcnt(majors[1]);
+    nminors[1] = popcnt(minors[1]);
 
     endgame = ((nminors[0] <= 2 && nmajors[0] <= 1) ||
             (nminors[0] == 0 && nmajors[0] <= 2) ||
@@ -238,7 +238,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             if ((1ull << square) & outposts[w]) subscore += 35;
             else if ((1ull << square) & holes[w]) subscore += 20;
             uint64_t attack_mask = attack_set_knight(square, pieces[w], pieces[1 - w]);
-            subscore += 6 * bitmap_count_ones(attack_mask);
+            subscore += 6 * popcnt(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -264,7 +264,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             count += 1;
             if ((1ull << square) & outposts[w]) subscore += 15;
             uint64_t attack_mask = attack_set_bishop(square, pieces[w], pieces[1 - w]);
-            subscore += 4 * bitmap_count_ones(attack_mask);
+            subscore += 4 * popcnt(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -278,9 +278,9 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             // At least before end-game, central pawns on same
             // colored squares are bad for bishops
             if ((1ull << square) & BLACK_CENTRAL_SQUARES) {
-                subscore -= bitmap_count_ones((pawns[0] | pawns[1]) & BLACK_CENTRAL_SQUARES) * 10;
+                subscore -= popcnt((pawns[0] | pawns[1]) & BLACK_CENTRAL_SQUARES) * 10;
             } else {
-                subscore -= bitmap_count_ones((pawns[0] | pawns[1]) & WHITE_CENTRAL_SQUARES) * 10;
+                subscore -= popcnt((pawns[0] | pawns[1]) & WHITE_CENTRAL_SQUARES) * 10;
             }
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned)
@@ -316,7 +316,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             if ((AFILE << file) & (majors[w] ^ (1ull << square)))
                 subscore += 25;
             uint64_t attack_mask = attack_set_rook(square, pieces[w], pieces[1 - w]);
-            subscore += 4 * bitmap_count_ones(attack_mask);
+            subscore += 4 * popcnt(attack_mask);
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
@@ -348,8 +348,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
                 subscore += 30;
 
             uint64_t attack_mask = attack_set_queen(square, pieces[w], pieces[1 - w]);
-            subscore += bitmap_count_ones(attack_mask & (~attacks[1 - w]));
-            subscore += bitmap_count_ones(attack_mask) / 2;
+            subscore += popcnt(attack_mask & (~attacks[1 - w]));
+            subscore += popcnt(attack_mask) / 2;
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
@@ -401,7 +401,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
         /*
         uint64_t king_movements;
         king_movements = kings[0] | attack_set_king(square, pieces[0], pieces[1]);
-        count = bitmap_count_ones(king_movements & (~attacks[1 - w]));
+        count = popcnt(king_movements & (~attacks[1 - w]));
         if (who == w && mvs->check) {
             if (count <= 3) subscore -= (3 - count) * 30;
             if (count == 0) subscore -= 30;
@@ -424,7 +424,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     return score;
 }
 
-static int kdist(int sq1, int sq2) {
+static int dist(int sq1, int sq2) {
     int rank1, file1, rank2, file2;
     rank1 = sq1 / 8;
     file1 = sq1 % 8;
@@ -434,16 +434,6 @@ static int kdist(int sq1, int sq2) {
     int dv = abs(file1-file2);
     if (dh < dv) return dv;
     else return dh;
-}
-
-static int dist(int sq1, int sq2) {
-    return kdist(sq1, sq2);
-    int rank1, file1, rank2, file2;
-    rank1 = sq1 / 8;
-    file1 = sq1 % 8;
-    rank2 = sq1 / 8;
-    file2 = sq2 % 8;
-    return abs(rank1-rank2) + abs(file1-file2);
 }
 
 
@@ -467,10 +457,10 @@ static int material_hash_wp(int nwqueens, int nbqueens, int nwrooks, int nbrooks
 }
 
 static int material_hash(struct board* board) {
-    return material_hash_wp(bitmap_count_ones(board->pieces[0][QUEEN]), bitmap_count_ones(board->pieces[1][QUEEN]),
-        bitmap_count_ones(board->pieces[0][ROOK]), bitmap_count_ones(board->pieces[1][ROOK]),
-        bitmap_count_ones(board->pieces[0][BISHOP]), bitmap_count_ones(board->pieces[1][BISHOP]),
-        bitmap_count_ones(board->pieces[0][KNIGHT]), bitmap_count_ones(board->pieces[1][KNIGHT]));
+    return material_hash_wp(popcnt(board->pieces[0][QUEEN]), popcnt(board->pieces[1][QUEEN]),
+        popcnt(board->pieces[0][ROOK]), popcnt(board->pieces[1][ROOK]),
+        popcnt(board->pieces[0][BISHOP]), popcnt(board->pieces[1][BISHOP]),
+        popcnt(board->pieces[0][KNIGHT]), popcnt(board->pieces[1][KNIGHT]));
 }
 
 void initialize_endgame_tables() {
@@ -623,18 +613,18 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 #define ENDGAME_KNOWLEDGE
 #ifdef ENDGAME_KNOWLEDGE
     // Only kings
-    if (bitmap_count_ones(pieces[0]) == 1 && bitmap_count_ones(pieces[1]) == 1) {
+    if (popcnt(pieces[0]) == 1 && popcnt(pieces[1]) == 1) {
         return 0;
     }
 
     // No pawns
-    if (bitmap_count_ones(pawns[0]) == 0 && bitmap_count_ones(pawns[1]) == 0) {
+    if (popcnt(pawns[0]) == 0 && popcnt(pawns[1]) == 0) {
         int nknights[2], nbishops[2], nrooks[2], nqueens[2];
         for (int i = 0; i < 2; i++) {
-            nknights[i] = bitmap_count_ones(board->pieces[i][KNIGHT]);
-            nbishops[i] = bitmap_count_ones(board->pieces[i][BISHOP]);
-            nrooks[i] = bitmap_count_ones(board->pieces[i][ROOK]);
-            nqueens[i] = bitmap_count_ones(board->pieces[i][QUEEN]);
+            nknights[i] = popcnt(board->pieces[i][KNIGHT]);
+            nbishops[i] = popcnt(board->pieces[i][BISHOP]);
+            nrooks[i] = popcnt(board->pieces[i][ROOK]);
+            nqueens[i] = popcnt(board->pieces[i][QUEEN]);
         }
         if (nqueens[0] > 0 && nqueens[1] == 0 && nrooks[1] == 0)
             score += 3000;
@@ -653,33 +643,32 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     }
 
     // Pawn + king vs king
-    if (bitmap_count_ones(majors[0]) == 0 && bitmap_count_ones(majors[1]) == 0 &&
-            bitmap_count_ones(minors[0]) == 0 && bitmap_count_ones(minors[1]) == 0) {
+    if (popcnt(majors[0]) == 0 && popcnt(majors[1]) == 0 &&
+            popcnt(minors[0]) == 0 && popcnt(minors[1]) == 0) {
         endgame_type = EG_KPKP;
-        if (bitmap_count_ones(pawns[0]) > 1 && bitmap_count_ones(pawns[1]) == 0)
+        if (popcnt(pawns[0]) > 1 && popcnt(pawns[1]) == 0)
             score += 400;
-        if (bitmap_count_ones(pawns[1]) > 1 && bitmap_count_ones(pawns[0]) == 0)
+        if (popcnt(pawns[1]) > 1 && popcnt(pawns[0]) == 0)
             score -= 400;
-        if (bitmap_count_ones(pawns[0]) == 1 && bitmap_count_ones(pawns[1]) == 0) {
+        if (popcnt(pawns[0]) == 1 && popcnt(pawns[1]) == 0) {
             int psquare = LSBINDEX(pawns[0]);
             int prank = psquare / 8;
             int pfile = psquare % 8;
             int qsquare = 56 + pfile;
-            if (kdist(qsquare, bkingsquare) + (board->who == 1) < (7 - prank))
+            if (dist(qsquare, bkingsquare) + (board->who == 1) < (7 - prank))
                 score += 400;
         }
-        if (bitmap_count_ones(pawns[1]) == 1 && bitmap_count_ones(pawns[0]) == 0) {
+        if (popcnt(pawns[1]) == 1 && popcnt(pawns[0]) == 0) {
             int psquare = LSBINDEX(pawns[0]);
             int prank = psquare / 8;
             int pfile = psquare % 8;
             int qsquare = pfile;
-            if (kdist(qsquare, wkingsquare) + (board->who == 0) < prank)
+            if (dist(qsquare, wkingsquare) + (board->who == 0) < prank)
                 score -= 400;
         }
     }
 
-
-    if (bitmap_count_ones(pieces[0]) == 1) {
+    if (popcnt(pieces[0]) == 1) {
         if (majors[1]) {
             int rank = wkingsquare / 8;
             int file = wkingsquare % 8;
@@ -701,7 +690,7 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
             if (majors[1] & mask) score -= 100;
 
         }
-    } else if (bitmap_count_ones(pieces[1]) == 1) {
+    } else if (popcnt(pieces[1]) == 1) {
         if (majors[0]) {
             int rank = bkingsquare / 8;
             int file = bkingsquare % 8;
@@ -790,7 +779,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         score -= bishop_table[square];
         count += 1;
     }
-
     score -= (count == 2) * 100;
 
     bmloop(P2BM(board, WHITEROOK), square, temp) {
@@ -858,7 +846,7 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     /*
     uint64_t king_movements;
     king_movements = kings[0] | attack_set_king(wkingsquare, pieces[0], pieces[1]);
-    count = bitmap_count_ones(king_movements & (~attacks[1]));
+    count = popcnt(king_movements & (~attacks[1]));
     if (who == 0 && mvs->check) {
         if (count <= 4) score -= (4 - count) * 60;
         if (count == 0) score -= 100;
@@ -870,7 +858,7 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     file = bkingsquare & 0x7;
 
     king_movements = kings[1] | attack_set_king(bkingsquare, pieces[1], pieces[0]);
-    count = bitmap_count_ones(king_movements & (~attacks[0]));
+    count = popcnt(king_movements & (~attacks[0]));
     if (who == 1 && mvs->check) {
         if (count <= 4) score += (4 - count) * 60;
         if (count == 0) score += 100;
@@ -880,7 +868,7 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     } else if (count == 0) score += 20;
 
     // the side with more options is better
-    score += (bitmap_count_ones(attacks[0]) - bitmap_count_ones(attacks[1])) * 8;
+    score += (popcnt(attacks[0]) - popcnt(attacks[1])) * 8;
     */
 
     return score;

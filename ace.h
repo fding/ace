@@ -7,8 +7,19 @@
 #define FLAGS_USE_OPENING_TABLE 2
 #define FLAGS_UCI_MODE 4
 
+#define GAME_UNDETERMINED 0
+#define GAME_DRAW 1
+#define GAME_WHITE_WON 2
+#define GAME_BLACK_WON 3
+
+#define WHITE 0
+#define BLACK 1
+
+typedef uint8_t side_t;
+
 /* Engine functions */
-void engine_init(int depth, int flags);
+void engine_init(int flags);
+int engine_reset_hashmap(int hashsize);
 void engine_new_game();
 char* engine_new_game_from_position(char* position);
 int engine_play();
@@ -19,8 +30,9 @@ struct board* engine_get_board();
 void engine_print();
 unsigned char engine_get_who();
 int engine_won();
+int engine_score();
 int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc, int binc, int moves_to_go);
 
-void engine_perft(int initial, int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles);
+void engine_perft(int initial, int depth, side_t who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles);
 
 #endif

@@ -1,26 +1,27 @@
+#include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#include <wchar.h>
+
 #include "board.h"
 #include "moves.h"
 #include "pieces.h"
-#include <stdio.h>
-#include <time.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
-
-#include <wchar.h>
-
 #include "search.h"
+
 const wchar_t pretty_piece_names[] = L"\x265f\x265c\x265e\x265d\x265b\x265a\x2659\x2656\x2658\x2657\x2655\x2654";
 
-struct state {
-    struct board curboard;
-    move_t all_moves[1024]; // Move history
-    int max_thinking_time;
-    char side; // which side the engine is on, 0 for white, 1 for black
-    char current_side;
-    char won; // 0 for undetermined, 1 for draw, 2 for white, 3 for black
+union transposition* ttable;
+struct opening_entry* opening_table;
+uint64_t ttable_size = 0;
+
+struct {
+    struct board board;
+    move_t moves[1024]; // Move history
+    char won;
     int flags;
-};
+} state;
 
 struct position_count {
     uint64_t hash;
@@ -28,12 +29,16 @@ struct position_count {
     char count;
 };
 
+// Position count table: counts the number of time a position has occured in the past
+// Used for draw detection
+struct position_count position_count_table[256];
+
 uint64_t square_hash_codes[64][12];
 uint64_t castling_hash_codes[4];
 uint64_t enpassant_hash_codes[8];
 uint64_t side_hash_code;
 
-void initialize_hash_codes(void) {
+static void initialize_hash_codes(void) {
     int i, j;
     rand64_seed(0);
     // Initialize hash-codes
@@ -52,11 +57,6 @@ void initialize_hash_codes(void) {
     side_hash_code = rand64();
 }
 
-
-// Position count table: counts the number of time a position has occured in the past
-// Used for draw detection
-struct position_count position_count_table[256];
-
 void position_count_table_update(uint64_t hash) {
     int hash1 = hash & 0xff;
     if (position_count_table[hash1].valid && position_count_table[hash1].hash == hash) {
@@ -74,12 +74,6 @@ int position_count_table_read(uint64_t hash) {
         return position_count_table[hash1].count;
     return 0;
 }
-
-struct state global_state;
-
-union transposition* transposition_table;
-struct opening_entry* opening_table;
-uint64_t transposition_table_size = 0;
 
 void opening_table_update(uint64_t hash, move_t move, char avoid) {
     struct delta_compressed m = *((struct delta_compressed *) (&move));
@@ -137,23 +131,31 @@ void save_opening_table(char * fname) {
     fclose(file);
 }
 
-void engine_init(int max_thinking_time, int flags) {
+void engine_init(int flags) {
     static int initialized = 0;
     if (!initialized) {
         initialized = 1;
         initialize_move_tables();
         initialize_hash_codes();
-        if (posix_memalign((void **) &transposition_table, 64, 67108864 * sizeof(union transposition))) {
+        if (posix_memalign((void **) &ttable, 64, hashmapsize * sizeof(union transposition))) {
             exit(1);
         }
-        memset(transposition_table, 0, 67108864 * sizeof(union transposition));
+        memset(ttable, 0, hashmapsize * sizeof(union transposition));
         if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
             exit(1);
         if (flags & FLAGS_USE_OPENING_TABLE)
             load_opening_table("openings.acebase");
     }
-    global_state.max_thinking_time = max_thinking_time;
-    global_state.flags = flags;
+    state.flags = flags;
+}
+
+int engine_reset_hashmap(int hashsize) {
+    hashmapsize = MSB(hashsize);
+    free(ttable);
+    if (posix_memalign((void **) &ttable, 64, hashmapsize * sizeof(union transposition))) {
+        return 1;
+    }
+    return 0;
 }
 
 void engine_new_game() {
@@ -163,42 +165,43 @@ void engine_new_game() {
 char* engine_new_game_from_position(char* position) {
     char * pos;
     memset(position_count_table, 0, sizeof(position_count_table));
-    pos = board_init_from_fen(&global_state.curboard, position);
-    global_state.current_side = global_state.curboard.who;
-    global_state.side = 0;
-    global_state.won = 0;
+    pos = board_init_from_fen(&state.board, position);
+    state.won = 0;
     srand(time(NULL));
     return pos;
 }
 
 int engine_score() {
     struct deltaset mvs;
-    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
-    return board_score(&global_state.curboard, global_state.current_side, &mvs, -31000, 31000);
+    generate_moves(&mvs, &state.board);
+    return board_score(&state.board, state.board.who, &mvs,
+            -INFINITY, INFINITY);
 }
 
 struct board* engine_get_board() {
-    return &global_state.curboard;
+    return &state.board;
 }
 
 unsigned char engine_get_who() {
-    return global_state.current_side;
+    return state.board.who;
 }
 
 int engine_won() {
-    return global_state.won;
+    return state.won;
 }
 
-void engine_perft(int initial, int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles) {
+void engine_perft(int initial, int depth, side_t who,
+        uint64_t* count, uint64_t* enpassants, uint64_t* captures,
+        uint64_t* check, uint64_t* promotions, uint64_t* castles) {
     struct deltaset mvs;
     int i;
-    generate_moves(&mvs, &global_state.curboard, who);
+    generate_moves(&mvs, &state.board);
     char buffer[8];
     uint64_t oldhash;
     if (depth == 0 && mvs.check) *check += 1;
     for (i = 0; i < mvs.nmoves; i++) {
-        oldhash = global_state.curboard.hash;
-        apply_move(&global_state.curboard, who, &mvs.moves[i]);
+        oldhash = state.board.hash;
+        apply_move(&state.board, &mvs.moves[i]);
         if (mvs.moves[i].captured != -1) {
             if (depth == 0) *captures += 1;
         }
@@ -214,108 +217,110 @@ void engine_perft(int initial, int depth, int who, uint64_t* count, uint64_t* en
             engine_perft(depth, depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
         }
         if (depth == initial) {
-            move_to_algebraic(&global_state.curboard, buffer, &mvs.moves[i]);
+            move_to_algebraic(&state.board, buffer, &mvs.moves[i]);
             fprintf(stderr, "%s: %llu\n", buffer, *count - oldcount);
         }
-        reverse_move(&global_state.curboard, who, &mvs.moves[i]);
-        assert(global_state.curboard.hash == oldhash);
+        reverse_move(&state.board, &mvs.moves[i]);
+        assert(state.board.hash == oldhash);
     }
 }
 
 static int engine_move_internal(move_t move) {
     struct deltaset mvs;
 
-    if (global_state.won) return global_state.won;
-    if (is_valid_move(&global_state.curboard, global_state.current_side, move))
-        apply_move(&global_state.curboard, global_state.current_side, &move);
+    if (state.won) return state.won;
+    if (is_valid_move(&state.board, state.board.who, move))
+        apply_move(&state.board, &move);
     else {
         return -1;
     }
 
-    position_count_table_update(global_state.curboard.hash);
-    if (position_count_table_read(global_state.curboard.hash) >= 4) {
+    position_count_table_update(state.board.hash);
+    if (position_count_table_read(state.board.hash) >= 4) {
         // Draw
-        global_state.won = 1;
+        state.won = GAME_DRAW;
         return 0;
     }
 
-    global_state.all_moves[global_state.curboard.nmoves - 1] = move;
-    global_state.current_side = 1-global_state.current_side;
+    state.moves[state.board.nmoves - 1] = move;
 
-    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
+    generate_moves(&mvs, &state.board);
     int nmoves = mvs.nmoves;
 
-    if (mvs.check && nmoves == 0) 
-        global_state.won = 3 - global_state.current_side;
-    else if (nmoves == 0 || global_state.curboard.nmovesnocapture >= 100)
-        global_state.won = 1;
+    // Checkmate
+    if (mvs.check && nmoves == 0) {
+        if (state.board.who)
+            return GAME_BLACK_WON;
+        else
+            return GAME_WHITE_WON;
+    }
+    // Stalemate
+    else if (nmoves == 0 || state.board.nmovesnocapture >= 100)
+        state.won = GAME_DRAW;
     
-    if (mvs.check) fprintf(stderr, "Check!\n");
     return 0;
+}
+
+int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc, int binc, int moves_to_go) {
+    struct deltaset mvs;
+    struct timer* timer;
+
+    if (state.won) return state.won;
+    generate_moves(&mvs, &state.board);
+    int nmoves = mvs.nmoves;
+    if (mvs.check && nmoves == 0) {
+        if (state.board.who)
+            return GAME_BLACK_WON;
+        else
+            return GAME_WHITE_WON;
+    }
+    // Stalemate
+    else if (nmoves == 0 || state.board.nmovesnocapture >= 100)
+        state.won = GAME_DRAW;
+
+    if (infinite_mode)
+        timer = new_infinite_timer();
+    else
+        timer = new_timer(wtime, btime, winc, binc, moves_to_go, state.board.who);
+
+    move_t ret = find_best_move(&state.board, timer, state.board.who, state.flags);
+    if (state.flags & FLAGS_UCI_MODE)
+        move_to_algebraic(engine_get_board(), move, &ret);
+    else
+        move_to_calgebraic(engine_get_board(), move, &ret);
+
+    free(timer);
+    return state.won;
 }
 
 void engine_stop_search() {
     search_stop();
 }
 
-int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc, int binc, int moves_to_go) {
-    move[0] = 0;
-    if (global_state.won) return global_state.won;
-    struct deltaset mvs;
-    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
-    int nmoves = mvs.nmoves;
-    if (nmoves == 0) {
-        if (mvs.check)
-            global_state.won = 3 - global_state.current_side;
-        else if (nmoves == 0)
-            global_state.won = 1;
-        return global_state.won;
-    }
-
-    struct timer* timer;
-    if (infinite_mode)
-        timer = new_infinite_timer();
-    else
-        timer = new_timer(wtime, btime, winc, binc, moves_to_go, global_state.current_side);
-
-    move_t ret = find_best_move(&global_state.curboard, timer, global_state.current_side, global_state.flags);
-    if (global_state.flags & FLAGS_UCI_MODE)
-        move_to_algebraic(engine_get_board(), move, &ret);
-    else
-        move_to_calgebraic(engine_get_board(), move, &ret);
-
-    free(timer);
-    return global_state.won;
-}
-
 int engine_move(char * buffer) {
     move_t move;
-    if (global_state.flags & FLAGS_UCI_MODE)
-        algebraic_to_move(buffer, engine_get_board(), &move);
+    if (state.flags & FLAGS_UCI_MODE)
+        algebraic_to_move(engine_get_board(), buffer, &move);
     else
-        calgebraic_to_move(buffer, engine_get_board(), &move);
+        calgebraic_to_move(engine_get_board(), buffer, &move);
     return engine_move_internal(move);
 }
 
-extern uint64_t transposition_table_size;
-
 void engine_print() {
-    struct board* board = &global_state.curboard;
+    struct board* board = &state.board;
     char fen[256];
     struct deltaset mvs;
-    generate_moves(&mvs, &global_state.curboard, global_state.current_side);
+    generate_moves(&mvs, &state.board);
 
-    fprintf(stderr, "%llu transpositions stored\n", transposition_table_size);
     board_to_fen(board, fen);
     fprintf(stderr, "FEN: %s\n", fen);
-    int score = board_score(board, global_state.current_side, &mvs, -31000, 31000);
+    int score = board_score(board, state.board.who, &mvs, -INFINITY, INFINITY);
     fprintf(stderr, "Static Board Score: %.2f\n", score / 100.0);
-    if (global_state.current_side == 0) {
+    if (state.board.who == 0) {
         fprintf(stderr, "White to move!\n");
     } else {
         fprintf(stderr, "Black to move!\n");
     }
-    fprintf(stderr, "Enpassant: %llx\n", board->enpassant);
     for (int i = 7; i >= 0; i--) {
         fprintf(stderr, "%d", i+1);
         for (int j = 0; j < 8; j++) {
@@ -328,6 +333,5 @@ void engine_print() {
         fprintf(stderr, "\n");
     }
     fprintf(stderr, "  a b c d e f g h\n");
-    fprintf(stderr, "Hash: %llx\n", board->hash);
 }
 

@@ -24,13 +24,11 @@ int pawn_table[64] = {
 int passed_pawn_table[8] = {0, 0, 0, 10, 15, 20, 50, 800};
 int isolated_pawn_penalty[8] = {20, 25, 28, 32, 32, 28, 25, 20};
 int doubled_pawn_penalty[8] = {10, 12, 15, 18, 18, 15, 12, 10};
-int totcalls;
-int hits;
 
 int pawn_table_endgame[64] = {
     800, 800, 800, 800, 800, 800, 800, 800,
-    120, 200, 300, 300, 300, 300, 200, 120, 
-    70, 80, 85, 90, 90, 85, 80, 70,
+    15, 35, 40, 55, 55, 40, 35, 15,
+    15, 35, 40, 55, 55, 40, 35, 15,
     10, 30, 35, 50, 50, 35, 30, 10,
     10, 20, 20, 40, 40, 20, 20, 10,
     0, 0, 10, 20, 20, 10, 0, 0,
@@ -40,7 +38,6 @@ int pawn_table_endgame[64] = {
 int passed_pawn_table_endgame[8] = {0, 20, 30, 40, 77, 154, 256, 800};
 int isolated_pawn_penalty_endgame[8] = {20, 25, 25, 25, 25, 25, 25, 20};
 int doubled_pawn_penalty_endgame[8] = {20, 25, 25, 30, 30, 25, 25, 20};
-
 
 struct pawn_structure * evaluate_pawns(struct board* board) {
     struct pawn_structure * stored;

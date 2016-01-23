@@ -1,4 +1,5 @@
 #include <time.h>
+#include <stdlib.h>
 #include "timer.h"
 
 struct timer * new_timer(time_t wtime, time_t btime, time_t winc, time_t binc, int movestogo, int who) {

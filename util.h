@@ -8,11 +8,15 @@
 #define MSB(u) (0x8000000000000000ull >> __builtin_clzll(u))
 #define MSBINDEX(u) (63 - __builtin_clzll(u))
 
+
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) > (b) ? (b) : (a))
+
+// Count the number of one bits in a 64 bit integer
+#define popcnt(bmap) __builtin_popcountll(bmap)
+
 uint64_t rand64(void);
 void rand64_seed(uint64_t seed);
-
-#define bitmap_count_ones(bmap) __builtin_popcountll(bmap)
-
 
 
 #endif
