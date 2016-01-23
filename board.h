@@ -39,6 +39,7 @@ struct board {
     char nmovesnocapture;
     char cancastle; // Castling priviledge
     uint64_t hash;
+    uint64_t pawn_hash;
     char castled;
     unsigned char who;
 };

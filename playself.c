@@ -85,7 +85,7 @@ int main(int argc, char* argv[]) {
             dup2(fdsblack[0], STDIN_FILENO);
             close(fdsblack[0]);
             close(fdsblack[1]);
-            execl(whiteprogram, whiteprogram, "--white=computer", "--black=human", "--depth", depth, "--starting", position, NULL);
+            execl(whiteprogram, whiteprogram, "--white=computer", "--black=human", "--starting", position, NULL);
         }
 
         pid_t pid_black = fork();
@@ -105,7 +105,7 @@ int main(int argc, char* argv[]) {
             dup2(fdsblackerr[1], STDERR_FILENO);
             close(fdsblackerr[0]);
             close(fdsblackerr[1]);
-            execl(blackprogram, blackprogram, "--white=human", "--black=computer", "--depth", depth, "--starting", position, NULL);
+            execl(blackprogram, blackprogram, "--white=human", "--black=computer", "--starting", position, NULL);
         }
 
         close(fdswhite[0]);
@@ -119,15 +119,15 @@ int main(int argc, char* argv[]) {
         waitpid(pid_white, &status, 0);
         switch (WEXITSTATUS(status)) {
             case 2:
-                fprintf(stderr, "White won\n");
+                fprintf(stdout, "White won\n");
                 scores[whitei] += 1;
                 break;
             case 1:
-                fprintf(stderr, "Black won\n");
+                fprintf(stdout, "Black won\n");
                 scores[1 - whitei] += 1;
                 break;
             case 0:
-                fprintf(stderr, "Draw\n");
+                fprintf(stdout, "Draw\n");
                 break;
         }
 
@@ -136,5 +136,5 @@ int main(int argc, char* argv[]) {
         strcpy(blackprogram, whiteprogram);
         strcpy(whiteprogram, temp);
     }
-    fprintf(stderr, "Final stats: White won %d times, Black won %d times\n", scores[0], scores[1]);
+    fprintf(stdout, "Final stats: White won %d times, Black won %d times\n", scores[0], scores[1]);
 }

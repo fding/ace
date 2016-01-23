@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <getopt.h>
+#include <locale.h>
 
 #include "ace.h"
 
@@ -31,6 +32,7 @@ int main(int argc, char* argv[]) {
     int c;
     int depth;
     char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    setlocale(LC_ALL, "en_US.UTF-8");
     while (1) {
         int option_index = 0;
         c = getopt_long(argc, argv, "s:d:", long_options, &option_index);
@@ -50,7 +52,7 @@ int main(int argc, char* argv[]) {
                 abort ();
           }
     }
-    engine_init();
+    engine_init(0, 0);
     engine_new_game_from_position(position);
     int score = engine_score();
     engine_print();

@@ -18,6 +18,7 @@
 #include <time.h>
 
 #include "ace.h"
+#include <locale.h>
 
 static struct option long_options[] = {
     {"white",  required_argument, 0, 'w'},
@@ -32,16 +33,17 @@ static struct option long_options[] = {
 };
 
 int main(int argc, char* argv[]) {
+    setlocale(LC_ALL, "en_US.UTF-8");
     char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     int c;
     int whitecomp, blackcomp;
     
-    int wtime, btime, winc, binc, moves_to_go;
-    wtime = 60000 * 5;
-    btime = 60000 * 5;
+    int wstarttime, bstarttime, wtime, btime, winc, binc, reset_period, movestogo;
+    wstarttime = 60000 * 5;
+    bstarttime = 60000 * 5;
     winc = 100;
     binc = 100;
-    moves_to_go = 0;
+    reset_period = 0;
 
     int depth = 7;
     whitecomp = 0;
@@ -94,10 +96,10 @@ int main(int argc, char* argv[]) {
             case '?':
                 break;
             case 1:
-                wtime = atoi(optarg);
+                wstarttime = atoi(optarg);
                 break;
             case 2:
-                btime = atoi(optarg);
+                bstarttime = atoi(optarg);
                 break;
             case 3:
                 winc = atoi(optarg);
@@ -106,7 +108,7 @@ int main(int argc, char* argv[]) {
                 binc = atoi(optarg);
                 break;
             case 5:
-                moves_to_go = atoi(optarg);
+                reset_period = atoi(optarg);
                 break;
   
             default:
@@ -120,15 +122,26 @@ int main(int argc, char* argv[]) {
     else fprintf(stderr, "white player as human and ");
     if (blackcomp) fprintf(stderr, " black player as computer. \n");
     else fprintf(stderr, " black player as human. \n");
-        fprintf(stderr, "White has %d ms, Black has %d ms\n", wtime, btime);
 
     engine_init(depth, FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
 
     engine_new_game_from_position(position);
     int should_play[2] = {whitecomp, blackcomp};
+
+
+    movestogo = reset_period;
+    wtime = wstarttime;
+    btime = bstarttime;
     while (!engine_won()) {
+        if (movestogo == 0 && reset_period != 0) {
+            movestogo = reset_period;
+            wtime = wstarttime;
+            btime = bstarttime;
+        }
         if (engine_get_who()) {
             btime += binc;
+            if (reset_period != 0)
+                movestogo -= 1;
         } else {
             wtime += winc;
         }
@@ -138,9 +151,10 @@ int main(int argc, char* argv[]) {
         fflush(stderr);
         if (should_play[engine_get_who()]) {
             char move[8];
-            engine_search(move, 0, wtime, btime, winc, binc, moves_to_go);
-            engine_move(move);
+            engine_search(move, 0, wtime, btime, winc, binc, movestogo);
             printf("%s\n", move);
+            fflush(stdout);
+            engine_move(move);
         }
         else {
             while (1) {
@@ -153,7 +167,7 @@ int main(int argc, char* argv[]) {
                 if (!engine_move(buffer)) {
                     break;
                 }
-                fprintf(stderr, "Invalid move!\n");
+                fprintf(stderr, "Invalid move (%s)!\n", buffer);
             }
         }
         int elapsed = (clock() - start) * 1000 / CLOCKS_PER_SEC;

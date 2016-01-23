@@ -129,6 +129,7 @@ char* board_init_from_fen(struct board* out, char* position) {
     out->castled = 0;
     out->cancastle = 0;
     out->hash = 0;
+    out->pawn_hash = 0;
 
     for (i = 0; i < 12; i++)
         P2BM(out, i) = 0;
@@ -234,6 +235,9 @@ char* board_init_from_fen(struct board* out, char* position) {
         char piece = get_piece_on_square(out, square);
         if (piece != -1) {
             out->hash ^= square_hash_codes[square][piece];
+            if (piece == WHITEPAWN || piece == BLACKPAWN) {
+                out->pawn_hash ^= square_hash_codes[square][piece];
+            }
         }
     }
 
@@ -634,6 +638,13 @@ int apply_move(struct board* board, unsigned char who, struct delta* move) {
     hupdate ^= square_hash_codes[move->square1][6 * who + move->piece];
     hupdate ^= square_hash_codes[move->square2][6 * who + move->promotion];
 
+    if (move->piece == PAWN) {
+        board->pawn_hash ^= square_hash_codes[move->square1][6 * who + move->piece];
+        if (move->promotion == PAWN) {
+            board->pawn_hash ^= square_hash_codes[move->square1][6 * who + move->promotion];
+        }
+    }
+
     // If capture, reset nmovesnocapture clock
     if (move->captured != -1) {
         if (move->misc & 0x40) {
@@ -648,6 +659,9 @@ int apply_move(struct board* board, unsigned char who, struct delta* move) {
             board->cancastle &= castle_priv[move->square2];
         }
         board->nmovesnocapture = 0;
+        if (move->captured == PAWN) {
+            board->pawn_hash ^= square_hash_codes[move->square2][6 * (1-who) + move->captured];
+        }
     }
 
     board->enpassant = 1;
@@ -713,6 +727,12 @@ int reverse_move(struct board* board, unsigned char who, move_t* move) {
     uint64_t mask2 = (1ull << move->square2);
     board->pieces[who][move->promotion] ^= mask2;
     board->pieces[who][move->piece] ^= mask1;
+    if (move->piece == PAWN) {
+        board->pawn_hash ^= square_hash_codes[move->square1][6 * who + move->piece];
+        if (move->promotion == PAWN) {
+            board->pawn_hash ^= square_hash_codes[move->square2][6 * who + move->promotion];
+        }
+    }
     // If capture
     if (move->captured != -1) {
         if (move->misc & 0x40) {
@@ -721,6 +741,9 @@ int reverse_move(struct board* board, unsigned char who, move_t* move) {
         }
         else
             board->pieces[1-who][move->captured] ^= mask2;
+        if (move->captured == PAWN) {
+            board->pawn_hash ^= square_hash_codes[move->square2][6 * (1-who) + move->captured];
+        }
     }
     // Handle castling
     if (move->misc & 0x80) {

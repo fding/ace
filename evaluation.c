@@ -4,6 +4,7 @@
 #include <assert.h>
 #include "pieces.h"
 #include "moves.h"
+#include "pawns.h"
 
 #define AFILE 0x0101010101010101ull
 #define HFILE 0x8080808080808080ull
@@ -14,7 +15,6 @@
 #define RANK7 0x00ff000000000000ull
 #define RANK8 0xff00000000000000ull
 
-#define UNDEFENDED
 
 static int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs);
 
@@ -27,71 +27,50 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
 // All tables are from white's perspective
 // We give a bonus for all pieces the closer they move to the opposite side
-int pawn_table[64] = {
-    800, 800, 800, 800, 800, 800, 800, 800,
-    30, 40, 50, 50, 50, 50, 40, 30, 
-    20, 30, 30, 35, 35, 30, 30, 20,
-    10, 15, 20, 25, 25, 20, 15, 10,
-    5, 10, 10, 15, 15, 10, 10, 5,
-    0, 0, 10, 10, 10, 10, 0, 0,
-    0, 0, 0, -5, -5, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0.0, 
-};
-
-int pawn_table_endgame[64] = {
-    800, 800, 800, 800, 800, 800, 800, 800,
-    120, 200, 300, 300, 300, 300, 200, 120, 
-    70, 80, 85, 90, 90, 85, 80, 70,
-    10, 30, 35, 50, 50, 35, 30, 10,
-    10, 20, 20, 40, 40, 20, 20, 10,
-    0, 0, 10, 20, 20, 10, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0.0, 
-};
 
 int knight_table[64] = {
     -30, -15, -15, -15, -15, -15, -15, -30,
-     -10,  0,  10,  10,  10,  10,  0,  -10,
-     0,  10,  30,  40,  40,  30,  10,  0,
-    -10, 15,  25,  35,  35,  25, 15, -10,
+     -10,  -5,  0,  0,  0, 0,  -5,  -10,
+     0,  15,  25,  35,  35,  25,  15,  0,
     -10, 10,  20,  30,  30,  20, 10, -10,
-    -15, 10,  15,  15,  15,  15, 10, -15,
-    -20, -10, -10, -10, -10, -10, -10, -20,
+    -10, 5,  15,  20,  20,  15, 0, -10,
+    -15, 0,  10,  15,  15,  10, 0, -15,
+    -20, -15, -10, -10, -10, -10, -15, -20,
     -40, -20, -15, -15, -15, -15, -20, -40,
 
 };
 
 int bishop_table[64] = {
-    -20, -20, -20, -20, -20, -20, -20, -20,
-      0,  20, 30,  30,  30,  30,  10,   0,
-     10,  10,  10,  10,  10,  10,  10,  10,
-    0,  0,  10,  20,  20,  10,  0, 0,
-    0,  0,  10,  20,  20,  10,  0, 0,
-    0,  5,  20,  10,  10,  10,  5, 0,
-    -10,  10,  0,  0,  0,  0,  10, -10,
-    -20, -20, -20, -20, -20, -20, -20, -20,
+    -15, -10, -12, -14, -14, -12, -10, -15,
+    -5,  10,  8,  5,  5,  8,  10, -5,
+     2,  15,  13,  10,  10,  13,  15, 2,
+     0,  15,  13,  10,  10,  13,  15, 0,
+    -5,  10,  8,  5,  5,  8,  10, -5,
+    -10,  5,  0,  -2,  -2,  0,  5, -10,
+    -13,  5,  -5,  -5,  -5,  -5,  5, -13,
+    -20, -10, -15, -20, -20, -15, -10, -20,
 };
 
 int rook_table[64] = {
-    50, 50, 50, 50, 50, 50, 50, 50,
-    70, 70, 70, 70, 70, 70, 70, 70,
-    0, 0, 10, 15, 15, 10, 0, 0,
-    0, 0, 10, 15, 15, 10, 0, 0,
-    0, 0, 10, 15, 15, 10, 0, 0,
-    0, 0, 10, 15, 15, 10, 0, 0,
-    0, 0, 10, 15, 15, 10, 0, 0,
-    -5, 0, 10, 15, 15, 10, 0, -5,
+    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -5, 0, 5, 5, 0, -5, -10,
 };
 
 int queen_table[64] = {
-    30, 30, 30, 30, 30, 30, 30, 30,
-    40, 40, 50, 50, 50, 50, 40, 40,
-    30, 40, 40, 50, 50, 40, 40, 40,
-    0, 0, 20, 30, 30, 20, 0, 0,
-    0, 0, 20, 30, 30, 20, 0, 0,
+    0, 2, 5, 10, 10, 5, 2, 0,
+    0, 2, 5, 10, 10, 5, 2, 0,
+    0, 2, 5, 10, 10, 5, 2, 0,
+    0, 0, 5, 10, 10, 5, 0, 0,
+    0, 0, 5, 10, 10, 5, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
+    -2, 0, 0, 0, 0, 0, 0, -2,
 };
 
 int king_table[64] = {
@@ -116,17 +95,22 @@ int king_table_endgame[64] = {
     -80, -50, -30, -30, -30, -30, -50, -80,
 };
 
-int passed_pawn_table[8] = {0, 0, 0, 10, 15, 20, 50, 800};
-int passed_pawn_table_endgame[8] = {0, 20, 30, 40, 77, 154, 256, 800};
-
 #define BLACK_CENTRAL_SQUARES 0x0000281428140000ull
 #define WHITE_CENTRAL_SQUARES 0x0000142814280000ull
 
 int material_for_player(struct board* board, unsigned char who) {
     return 100 * bitmap_count_ones(board->pieces[who][PAWN]) +
-        320 * bitmap_count_ones(board->pieces[who][KNIGHT]) +
-        333 * bitmap_count_ones(board->pieces[who][BISHOP]) +
-        510 * bitmap_count_ones(board->pieces[who][ROOK]) +
+        300 * bitmap_count_ones(board->pieces[who][KNIGHT]) +
+        315 * bitmap_count_ones(board->pieces[who][BISHOP]) +
+        490 * bitmap_count_ones(board->pieces[who][ROOK]) +
+        880 * bitmap_count_ones(board->pieces[who][QUEEN]);
+}
+
+int material_for_player_endgame(struct board* board, unsigned char who) {
+    return 135 * bitmap_count_ones(board->pieces[who][PAWN]) +
+        275 * bitmap_count_ones(board->pieces[who][KNIGHT]) +
+        300 * bitmap_count_ones(board->pieces[who][BISHOP]) +
+        550 * bitmap_count_ones(board->pieces[who][ROOK]) +
         900 * bitmap_count_ones(board->pieces[who][QUEEN]);
 }
 
@@ -181,7 +165,7 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     blackmaterial = material_for_player(board, 1);
     score = whitematerial - blackmaterial;
 
-    uint64_t pawns[2], minors[2], majors[2], pieces[2], kings[2], outposts[2];
+    uint64_t pawns[2], minors[2], majors[2], pieces[2], kings[2], outposts[2], holes[2];
 
     pawns[0] = P2BM(board, WHITEPAWN);
     pawns[1] = P2BM(board, BLACKPAWN);
@@ -222,10 +206,6 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     pawn_attacks[0] = attack_set_pawn_multiple_capture[0](pawns[0], 0, 0xffffffffffffffffull);
     pawn_attacks[1] = attack_set_pawn_multiple_capture[1](pawns[1], 0, 0xffffffffffffffffull);
 
-    // Outposts are squares attacked by your own pawns but not by opponents
-    outposts[0] = pawn_attacks[0] & (~pawn_attacks[1]) & 0x00ffffff00000000ull;
-    outposts[1] = pawn_attacks[1] & (~pawn_attacks[0]) & 0x00000000ffffff00ull;
-
     pieces[0] = pawns[0] | minors[0] | majors[0] | kings[0];
     pieces[1] = pawns[1] | minors[1] | majors[1] | kings[1];
 
@@ -236,56 +216,19 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     undefended[0] = attacks[1] ^ (attacks[0] & attacks[1]);
     undefended[1] = attacks[0] ^ (attacks[0] & attacks[1]);
 
-    // undeveloped pieces penalty
-    if (RANK1 & minors[0])
-        score -= 40;
-    if (RANK8 & minors[1])
-        score += 40;
-
     uint64_t mask;
+    struct pawn_structure * pstruct;
+    pstruct = evaluate_pawns(board);
+    score += pstruct->score;
+
+    // Outposts are squares attacked by your own pawns but not by opponents
+    outposts[0] = pstruct->holes[1] & pawn_attacks[0] & 0x00ffffff00000000ull;
+    outposts[1] = pstruct->holes[0] & pawn_attacks[1] & 0x00000000ffffff00ull;
+    holes[0] = pstruct->holes[1];
+    holes[1] = pstruct->holes[0];
 
     for (int w = 0; w < 2; w++) {
         int subscore = 0;
-        count = 0;
-        bmloop(P2BM(board, 6 * w + PAWN), square, temp) {
-            count += 1;
-            rank = square / 8;
-            file = square & 0x7;
-            int loc = (w == 0) ? (56 - square + file + file) : square;
-            subscore += pawn_table[loc];
-#ifdef UNDEFENDED
-            // undefended pieces are likely taken
-            if ((1ull << square) & undefended[w]) {
-                if (who == w)
-                    subscore -= 10;
-                else
-                    subscore -= 50;
-            }
-#endif
-#ifdef PINNED
-            // Pinned pieces aren't great
-            if ((1ull << square) & mvs->pinned)
-                subscore -= 10;
-#endif
-            // doubled pawns are bad
-            if ((AFILE << file)  & (pawns[w] ^ (1ull << square)))
-                subscore -= 20;
-            // passed pawns are good
-            if (!((AFILE << square) & pawns[1 - w])) {
-                if (w)
-                    subscore += passed_pawn_table[7 - rank];
-                else
-                    subscore += passed_pawn_table[rank];
-            }
-
-            mask = 0;
-            // isolated pawns are bad
-            if (file != 0) mask |= (AFILE << (file - 1));
-            if (file != 7) mask |= (AFILE << (file + 1));
-            if (!(mask & pawns[w])) subscore -= 20;
-        }
-        // If you have no pawns, endgames will be hard
-        if (!count) subscore -= 120;
 
         bmloop(P2BM(board, 6 * w + KNIGHT), square, temp) {
             file = square & 0x7;
@@ -293,9 +236,9 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             subscore += knight_table[loc];
             // Outposts are good
             if ((1ull << square) & outposts[w]) subscore += 35;
+            else if ((1ull << square) & holes[w]) subscore += 20;
             uint64_t attack_mask = attack_set_knight(square, pieces[w], pieces[1 - w]);
-            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
-            subscore += 3 * bitmap_count_ones(attack_mask);
+            subscore += 6 * bitmap_count_ones(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -319,10 +262,9 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             int loc = (w == 0) ? (56 - square + file + file) : square;
             subscore += bishop_table[loc];
             count += 1;
-            if ((1ull << square) & outposts[w]) subscore += 20;
+            if ((1ull << square) & outposts[w]) subscore += 15;
             uint64_t attack_mask = attack_set_bishop(square, pieces[w], pieces[1 - w]);
-            subscore += 3 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
-            subscore += 3 * bitmap_count_ones(attack_mask);
+            subscore += 4 * bitmap_count_ones(attack_mask);
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
                 if (who == w)
@@ -333,15 +275,13 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             if (((1ull << square) & pawn_attacks[1 - w]) && who)
                 subscore -= 60;
 #endif
-            /*
             // At least before end-game, central pawns on same
             // colored squares are bad for bishops
             if ((1ull << square) & BLACK_CENTRAL_SQUARES) {
-                subscore -= bitmap_count_ones((pawns[0] | pawns[1]) & BLACK_CENTRAL_SQUARES) * 15;
+                subscore -= bitmap_count_ones((pawns[0] | pawns[1]) & BLACK_CENTRAL_SQUARES) * 10;
             } else {
-                subscore -= bitmap_count_ones((pawns[0] | pawns[1]) & WHITE_CENTRAL_SQUARES) * 15;
+                subscore -= bitmap_count_ones((pawns[0] | pawns[1]) & WHITE_CENTRAL_SQUARES) * 10;
             }
-            */
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned)
                 subscore -= 15;
@@ -354,23 +294,29 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 
         bmloop(P2BM(board, 6 * w + ROOK), square, temp) {
             file = square & 0x7;
+            rank = square / 8;
             int loc = (w == 0) ? (56 - square + file + file) : square;
             subscore += rook_table[loc];
+            if ((w && rank == 1) || (!w && rank == 6)) {
+                // TODO: only do this if king is on rank 8
+                // or if there are pawns on rank 7
+                subscore += 50;
+            }
             if ((1ull << square) & outposts[w]) subscore += 20;
             // Rooks on open files are great
             if (!((AFILE << file) & (pawns[0] | pawns[1])))
                 subscore += 30;
             // Rooks on semiopen files are good
-            else if ((AFILE << file) & pawns[1-w])
+            else if (!((AFILE << file) & pawns[w])) {
                 subscore += 20;
+            }
 
             // Doubled rooks are very powerful.
             // We add 80 (40 on this, 40 on other)
             if ((AFILE << file) & (majors[w] ^ (1ull << square)))
                 subscore += 25;
             uint64_t attack_mask = attack_set_rook(square, pieces[w], pieces[1 - w]);
-            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
-            subscore += 2 * bitmap_count_ones(attack_mask);
+            subscore += 4 * bitmap_count_ones(attack_mask);
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
@@ -402,8 +348,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
                 subscore += 30;
 
             uint64_t attack_mask = attack_set_queen(square, pieces[w], pieces[1 - w]);
-            subscore += 2 * bitmap_count_ones(attack_mask & (~attacks[1 - w]));
-            subscore += 1 * bitmap_count_ones(attack_mask);
+            subscore += bitmap_count_ones(attack_mask & (~attacks[1 - w]));
+            subscore += bitmap_count_ones(attack_mask) / 2;
 
 #ifdef UNDEFENDED
             if ((1ull << square) & undefended[w]) {
@@ -439,19 +385,20 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 
         uint64_t mask1, mask2;
         if (w) {
-            mask1 = mask >> 40;
-            mask2 = mask >> 32;
-        } else {
             mask1 = mask << 40;
             mask2 = mask << 32;
+        } else {
+            mask1 = mask >> 40;
+            mask2 = mask >> 32;
         }
         // we want a pawn shield
-        if ((board->castled & 1) && !(mask1 & pawns[w]))
+        if (!(mask1 & pawns[w]))
             subscore -= 30;
         // Uh-oh -- maybe a pawn storm!
         if (mask2 & pawns[1 - w])
             subscore -= 30;
 
+        /*
         uint64_t king_movements;
         king_movements = kings[0] | attack_set_king(square, pieces[0], pieces[1]);
         count = bitmap_count_ones(king_movements & (~attacks[1 - w]));
@@ -462,13 +409,16 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
         } else if (count <= 1 && (king_movements & attacks[1 - w])) {
             subscore -= (2 - count) *30;
         }
+        */
 
         if (w) score -= subscore;
         else score += subscore;
     }
 
+    /*
     // castling is almost always awesome
     score += (board->castled & 1) * 20 - ((board->castled & 2) >> 1) * 20;
+    */
     score += ((board->cancastle & 12) != 0) * 10 - ((board->cancastle & 3) != 0 ) * 10;
 
     return score;
@@ -776,92 +726,57 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
 #endif
 
-    int whitematerial, blackmaterial;
-    whitematerial = 0;
-    blackmaterial = 0;
+    int whitematerial = material_for_player_endgame(board, 0);
+    int blackmaterial = material_for_player_endgame(board, 1);
+    struct pawn_structure* pstruct;
+    pstruct = evaluate_pawns(board);
+    score = whitematerial - blackmaterial;
+    score += pstruct->score_eg;
 
-
-    count = 0;
     bmloop(P2BM(board, WHITEPAWN), square, temp) {
-        count += 1;
-        rank = square / 8;
-        file = square & 0x7;
-        whitematerial += 135;
-        score += pawn_table_endgame[56 - square + file + file];
-        // doubled pawns are bad
-        if ((AFILE << file)  & (pawns[0] ^ (1ull << square)))
-            score -= 20;
-        
         // Encourage kings to come and protect these pawns
         int dist_from_wking = dist(square, wkingsquare);
         int dist_from_bking = dist(square, bkingsquare);
         int dist_score = 0;
         dist_score += (dist_from_bking - dist_from_wking) * 15;
         // passed pawns are good
-        if (!((AFILE << square) & pawns[1])) {
-            score += passed_pawn_table_endgame[rank];
+        if (pstruct->passed_pawns[0] & (1ull << square)) {
             dist_score += (dist_from_bking - dist_from_wking) * 30;
         }
         if (endgame_type == EG_KPKP)
             dist_score *= 2;
 
         score += dist_score;
-
-        mask = 0;
-        // isolated pawns are bad
-        if (file != 0) mask |= (AFILE << (file - 1));
-        if (file != 7) mask |= (AFILE << (file + 1));
-        if (!(mask & pawns[0])) score -= 20;
     }
-    // If you have no pawns, endgames will be hard
-    if (!count) score -= 120;
 
-    count = 0;
     bmloop(P2BM(board, BLACKPAWN), square, temp) {
-        count += 1;
-        file = square & 0x7;
-        rank = square / 8;
-        blackmaterial += 135;
-        score -= pawn_table_endgame[square];
-        if ((AFILE << file) & (pawns[1] ^ (1ull << square)))
-            score += 20;
-
         int dist_from_wking = dist(square, wkingsquare);
         int dist_from_bking = dist(square, bkingsquare);
         int dist_score = 0;
         dist_score += (dist_from_bking - dist_from_wking) * 15;
 
-        if (!(((AFILE << file) >> (56 - 8 * rank)) & pawns[0])) {
-            score -= passed_pawn_table_endgame[8-rank];
+        if (pstruct->passed_pawns[0] & (1ull << square)) {
             dist_score += (dist_from_bking - dist_from_wking) * 30;
         }
 
         if (endgame_type == EG_KPKP) {
             dist_score *= 2;
         }
-        score -= dist_score;
 
-        mask = 0;
-        if (file != 0) mask |= (AFILE << (file - 1));
-        if (file != 7) mask |= (AFILE << (file + 1));
-        if (!(mask & pawns[1])) score += 20;
+        score -= dist_score;
     }
-    if (!count) score += 120;
 
     bmloop(P2BM(board, WHITEKNIGHT), square, temp) {
         file = square & 0x7;
-        whitematerial += 275;
         score += knight_table[56 - square + file + file];
     }
     bmloop(P2BM(board, BLACKKNIGHT), square, temp) {
-        blackmaterial += 275;
         score -= knight_table[square];
     }
 
     count = 0;
     bmloop(P2BM(board, WHITEBISHOP), square, temp) {
         file = square & 0x7;
-        whitematerial += 300;
         score += bishop_table[56 - square + file + file];
         count += 1;
     }
@@ -872,7 +787,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
     count = 0;
     bmloop(P2BM(board, BLACKBISHOP), square, temp) {
-        blackmaterial += 300;
         score -= bishop_table[square];
         count += 1;
     }
@@ -881,7 +795,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
     bmloop(P2BM(board, WHITEROOK), square, temp) {
         file = square & 0x7;
-        whitematerial += 550;
         // Rooks on open files are great
         if (!((AFILE << file) & (pawns[0] | pawns[1])))
             score += 30;
@@ -896,7 +809,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     }
     bmloop(P2BM(board, BLACKROOK), square, temp) {
         file = square & 0x7;
-        blackmaterial += 550;
         if (!((AFILE << file) & (pawns[0] | pawns[1])))
             score -= 30;
         else if ((AFILE << file) & pawns[0])
@@ -907,7 +819,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     }
     bmloop(P2BM(board, WHITEQUEEN), square, temp) {
         file = square & 0x7;
-        whitematerial += 880;
         // A queen counts as a rook
         if (!((AFILE << file) & (pawns[0] | pawns[1])))
             score += 20;
@@ -918,7 +829,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
             score += 30;
     }
     bmloop(P2BM(board, BLACKQUEEN), square, temp) {
-        blackmaterial += 880;
         if (!((AFILE << file) & (pawns[0] | pawns[1])))
             score -= 20;
         else if ((AFILE << file) & pawns[0])
@@ -927,8 +837,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         if ((AFILE << file) & (majors[1] ^ (1ull << square)))
             score -= 30;
     }
-
-    score += (whitematerial - blackmaterial);
 
     int winning_side = 0;
     if (whitematerial > blackmaterial)

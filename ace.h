@@ -19,6 +19,7 @@ struct board* engine_get_board();
 void engine_print();
 unsigned char engine_get_who();
 int engine_won();
+int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc, int binc, int moves_to_go);
 
 void engine_perft(int initial, int depth, int who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles);
 

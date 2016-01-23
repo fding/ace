@@ -7,7 +7,10 @@
 #include <string.h>
 #include <assert.h>
 
+#include <wchar.h>
+
 #include "search.h"
+const wchar_t pretty_piece_names[] = L"\x265f\x265c\x265e\x265d\x265b\x265a\x2659\x2656\x2658\x2657\x2655\x2654";
 
 struct state {
     struct board curboard;
@@ -314,15 +317,17 @@ void engine_print() {
     }
     fprintf(stderr, "Enpassant: %llx\n", board->enpassant);
     for (int i = 7; i >= 0; i--) {
+        fprintf(stderr, "%d", i+1);
         for (int j = 0; j < 8; j++) {
             char piece = get_piece_on_square(board, 8 * i + j);
             if (piece == -1)
-                fprintf(stderr, " . ");
+                fprintf(stderr, " .");
             else
-                fprintf(stderr, " %c ", piece_names[piece]);
+                fwprintf(stderr, L" %lc", pretty_piece_names[piece]);
         }
-        fprintf(stderr, "\n\n");
+        fprintf(stderr, "\n");
     }
+    fprintf(stderr, "  a b c d e f g h\n");
     fprintf(stderr, "Hash: %llx\n", board->hash);
 }
 

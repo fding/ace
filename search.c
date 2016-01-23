@@ -56,17 +56,14 @@ static int is_checkmate(int score) {
 
 static void transposition_table_update_with_hash(int loc, union transposition * update, int count) {
     if (transposition_table[loc].metadata.type) {
-        int should_replace = (!(transposition_table[loc].metadata.type & MOVESTORED) && (update->metadata.type & MOVESTORED)) ||
-            (!(transposition_table[loc].metadata.type & EXACT) && (update->metadata.type & EXACT));
         if (transposition_table[loc].metadata.hash == update->metadata.hash) {
+            int should_replace = (!(transposition_table[loc].metadata.type & MOVESTORED) && (update->metadata.type & MOVESTORED)) ||
+                (!(transposition_table[loc].metadata.type & EXACT) && (update->metadata.type & EXACT));
             if (should_replace || update->metadata.depth > transposition_table[loc].metadata.depth)
                 transposition_table[loc] = *update;
         }
         else {
-            if (should_replace || 
-                    4 * transposition_table[loc].metadata.depth + 1 * transposition_table[loc].metadata.age < 4 * update->metadata.depth + 1 * update->metadata.age) {
-                transposition_table[loc] = *update;
-            }
+            transposition_table[loc] = *update;
         }
     }
     else {
@@ -601,8 +598,9 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
         apply_move(board, who, move);
         int skip_deep_search = 0;
-        if (i > 2 && depth >= 30 && beta == alpha + 1) { // && i >= nchecks && allow_prune && beta == alpha + 1 && depth >= 30 && out.moves[i].captured == -1
-                // && out.moves[i].promotion == out.moves[i].piece) {
+        int allow_lmr = allow_prune && depth >= 30 && ((i > 2 && beta == alpha + 1));// || (i > 4 && i >= nchecks && out.moves[i].captured == -1
+                    //&& out.moves[i].promotion == out.moves[i].piece));
+        if (allow_lmr) {
             score = -search(board, timer, &temp, move, depth - 20, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
             if (score <= alpha) {
                 skip_deep_search = 1;

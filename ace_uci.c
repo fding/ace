@@ -22,6 +22,7 @@ void* launch_search_thread(void * argument) {
     engine_search(buffer, 0, arg->wtime, arg->btime, arg->winc, arg->binc, arg->moves_to_go);
     printf("bestmove %s\n", buffer);
     sem_post(&available_threads);
+    return NULL;
 }
 void* launch_ponder_thread(void * argument) {
     (void) argument;
@@ -29,6 +30,7 @@ void* launch_ponder_thread(void * argument) {
     engine_search(buffer, 1, 0, 0, 0, 0, 0);
     printf("bestmove %s\n", buffer);
     sem_post(&available_threads);
+    return NULL;
 }
 
 int main() {
