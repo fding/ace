@@ -20,7 +20,14 @@ typedef uint8_t side_t;
 /* Engine functions */
 void engine_init(int flags);
 int engine_reset_hashmap(int hashsize);
+
+
+#define ACE_PARAM_CONTEMPT 1
+int engine_set_param(int name, int value);
+
+
 void engine_new_game();
+void engine_clear_state();
 char* engine_new_game_from_position(char* position);
 int engine_play();
 int engine_ponder();

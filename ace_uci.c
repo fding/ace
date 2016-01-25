@@ -21,6 +21,7 @@ void* launch_search_thread(void * argument) {
     char buffer[8];
     engine_search(buffer, 0, arg->wtime, arg->btime, arg->winc, arg->binc, arg->moves_to_go);
     printf("bestmove %s\n", buffer);
+    fflush(stdout);
     sem_post(&available_threads);
     return NULL;
 }
@@ -29,6 +30,7 @@ void* launch_ponder_thread(void * argument) {
     char buffer[8];
     engine_search(buffer, 1, 0, 0, 0, 0, 0);
     printf("bestmove %s\n", buffer);
+    fflush(stdout);
     sem_post(&available_threads);
     return NULL;
 }
@@ -56,10 +58,10 @@ int main() {
             if (strcmp(token, "uci") == 0) {
                 printf("id name ACE\n");
                 printf("id author D. Ding\n\n");
-                // TODO: actually implement hash map size changing :)
                 printf("option name Hash type spin default 1024 min 1 max 8096\n");
                 printf("option name Ponder type check default true\n");
                 printf("option name OwnBook type check default true\n");
+                printf("option name Contempt type spin default 0 min -100 max 100\n");
                 printf("uciok\n");
                 break;
             }
@@ -72,7 +74,22 @@ int main() {
                 break;
             }
             else if (strcmp(token, "setoption") == 0) {
-                // Not implemented
+                token = strtok(NULL, " ");
+                if (!token || strcmp(token, "name")) break;
+                token = strtok(NULL, " ");
+                if (strcmp(token, "Hash") == 0) {
+                    token = strtok(NULL, " ");
+                    if (!token || strcmp(token, "value")) break;
+                    token = strtok(NULL, " ");
+                    if (!token) break;
+                    engine_reset_hashmap(atoi(token));
+                } else if (strcmp(token, "Contempt") == 0) {
+                    token = strtok(NULL, " ");
+                    if (!token || strcmp(token, "value")) break;
+                    token = strtok(NULL, " ");
+                    if (!token) break;
+                    engine_set_param(ACE_PARAM_CONTEMPT, atoi(token));
+                }
                 break;
             }
             else if (strcmp(token, "register") == 0) {
@@ -80,6 +97,7 @@ int main() {
                 break;
             }
             else if (strcmp(token, "ucinewgame") == 0) {
+                engine_clear_state();
                 engine_new_game();
                 break;
             }
@@ -131,7 +149,7 @@ int main() {
                 timec.btime = 8000;
                 timec.winc = 0;
                 timec.binc = 0;
-                timec.moves_to_go = 1;
+                timec.moves_to_go = 0;
 
                 while (token != NULL) {
                     if (strcmp(token, "wtime") == 0) {
@@ -183,7 +201,7 @@ int main() {
                 break;
             }
             else if (strcmp(token, "quit") == 0) {
-                exit(0);
+                return 0;
                 break;
             }
 
@@ -192,4 +210,5 @@ int main() {
 
         fflush(stdout);
     }
+    return 0;
 }

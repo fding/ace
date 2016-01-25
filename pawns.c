@@ -12,13 +12,13 @@ uint64_t hash(uint64_t wpawns, uint64_t bpawns) {
 
 int pawn_table[64] = {
     800, 800, 800, 800, 800, 800, 800, 800,
-    5, 10, 10, 20, 20, 10, 10, 5,
-    5, 10, 10, 20, 20, 10, 10, 5,
-    5, 10, 10, 20, 20, 10, 10, 5,
-    0, 0, 5, 10, 10, 5, 0, 0,
-    -2, -2, 0, 5, 5, 0, -2, -2,
-    -2, -2, -2, -2, -2, -2, -2, -2,
-    0, 0, 0, 0, 0, 0, 0, 0, 
+    -6, 7, -4, -2, -2, -4, 7, -6,
+    -7, -6, -3, -1, -1, -3, -6, -7,
+    -7, 0, 2, 11, 11, 2, 0, -7,
+    -12, -7, 10, 17, 17, 10, -7, -12,
+    -13, -3, 10, 12, 12, 10, -3, -13,
+    -10, 0, 2, 4, 4, 2, 0, -10,
+    0, 0, 0, 0, 0, 0, 0, 0
 };
 
 int passed_pawn_table[8] = {0, 0, 0, 10, 15, 20, 50, 800};
@@ -27,13 +27,13 @@ int doubled_pawn_penalty[8] = {10, 12, 15, 18, 18, 15, 12, 10};
 
 int pawn_table_endgame[64] = {
     800, 800, 800, 800, 800, 800, 800, 800,
-    15, 35, 40, 55, 55, 40, 35, 15,
-    15, 35, 40, 55, 55, 40, 35, 15,
-    10, 30, 35, 50, 50, 35, 30, 10,
-    10, 20, 20, 40, 40, 20, 20, 10,
-    0, 0, 10, 20, 20, 10, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 
+     15,  17,  14,  14,  14,  14,  12, 10,
+     15,  17,  19,  19,  19,  19,  17, 15,
+     10,  12,  14,  14,  14,  14,  12, 10,
+     5,  7,  8,  8,  8,  8,  7, 5,
+     0,  2,  3,  3,  3,  3,  2, 0,
+    -5, -3, -2, -2, -2, -2, -3, -5,
+    0, 0, 0, 0, 0, 0, 0, 0
 };
 int passed_pawn_table_endgame[8] = {0, 20, 30, 40, 77, 154, 256, 800};
 int isolated_pawn_penalty_endgame[8] = {20, 25, 25, 25, 25, 25, 25, 20};
@@ -51,7 +51,6 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
     uint64_t mask;
     int score = 0;
     int score_eg = 0;
-    int count = 0;
     stored->passed_pawns[0] = 0;
     stored->passed_pawns[1] = 0;
 
@@ -61,6 +60,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
     uint64_t all_pawns = board->pieces[0][PAWN] | board->pieces[1][PAWN];
 
     for (int who = 0; who < 2; who++) {
+        int count = 0;
         int subscore = 0;
         int subscore_eg = 0;
         stored->holes[who] = 0ull;
@@ -90,16 +90,15 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             }
 
             ahead ^= (1ull << square);
-            behind ^= (1ull << square);
             uint64_t passed_pawn_mask = ahead;
-            uint64_t backward_mask = 0;
+            uint64_t backward_mask = behind;
             if (file != 0) {
-                passed_pawn_mask |= (ahead << 1);
-                backward_mask |= (behind << 1);
-            }
-            if (file != 7) {
                 passed_pawn_mask |= (ahead >> 1);
                 backward_mask |= (behind >> 1);
+            }
+            if (file != 7) {
+                passed_pawn_mask |= (ahead << 1);
+                backward_mask |= (behind << 1);
             }
 
             int rank7pawn = (((who == 0) && (rank == 6)) || ((who == 1) && (rank == 1)));
@@ -146,8 +145,8 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     supporters |= (sq1behind >> 1);
                 }
                 if (supporters & board->pieces[who][PAWN]) {
-                    subscore += 15;
-                    subscore_eg += 15;
+                    subscore += 3;
+                    subscore_eg += 3;
                 }
             }
 
@@ -159,14 +158,14 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             }
 
             // passed pawns are good
-            if (!(passed_pawn_mask & board->pieces[1-who][PAWN])) {
+            if (!(passed_pawn_mask & board->pieces[1-who][PAWN]) && !(ahead & board->pieces[who][PAWN])) {
                 if (who) {
                     subscore += passed_pawn_table[7 - rank];
-                    subscore_eg += passed_pawn_table[7 - rank];
+                    subscore_eg += passed_pawn_table_endgame[7 - rank];
                 }
                 else {
                     subscore += passed_pawn_table[rank];
-                    subscore_eg += passed_pawn_table[7 - rank];
+                    subscore_eg += passed_pawn_table_endgame[rank];
                 }
                 stored->passed_pawns[who] |= (1ull << square);
             }
@@ -185,8 +184,8 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
 
         // If you have no pawns, endgames will be hard
         if (!count) {
-            subscore -= 120;
-            subscore_eg -= 300;
+            subscore -= 50;
+            subscore_eg -= 60;
         }
         if (who) {
             score -= subscore;

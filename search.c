@@ -31,7 +31,7 @@ int hashmapsize = (1ull << 20);
 
 int ply;
 int out_of_time = 0;
-int signal_stop = 0;
+volatile int signal_stop = 0;
 
 int material_table[5] = {100, 510, 325, 333, 900};
 
@@ -684,7 +684,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
 int prev_score[2];
 
-move_t find_best_move(struct board* board, struct timer* timer, char who, char flags) {
+move_t find_best_move(struct board* board, struct timer* timer, char who, char flags, char infinite) {
     signal_stop = 0;
     out_of_time = 0;
     int alpha, beta;
@@ -712,11 +712,52 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
             opening_table_read(board->hash, &best) == 0) {
         fprintf(stderr, "Applying opening...\n");
         apply_move(board, &best);
+        char buffer[8];
+        move_to_algebraic(board, buffer, &best);
         out_of_time = 0;
         ply = 0;
         // Analyze this position so that when we leave the opening,
         // we have some entries in the transposition table
-        s = search(board, timer, &temp, NULL, 60, alpha, beta, 30, 0 /* null-mode */, 1 - who);
+        if (infinite) {
+            for (d = 60; d < 400; d+=20) {
+                s = search(board, timer, &temp, NULL, d, alpha, beta, 30, 0 /* null-mode */, 1 - who);
+                if (out_of_time) break;
+                if (flags & FLAGS_UCI_MODE) {
+                    printf("info depth %d ", d / 10);
+                    printf("score ");
+                    if (is_checkmate(s)) {
+                        if (s > 0)
+                            printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
+                        else
+                            printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
+                    }
+                    else {
+                        printf("cp %d ", s);
+                    }
+                    printf("time %lu pv %s", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
+                    print_pv(board, d/10);
+                    printf("\n");
+                }
+            }
+        } else {
+            s = search(board, timer, &temp, NULL, 60, alpha, beta, 30, 0 /* null-mode */, 1 - who);
+            if (flags & FLAGS_UCI_MODE) {
+                printf("info depth %d ", d / 10);
+                printf("score ");
+                if (is_checkmate(s)) {
+                    if (s > 0)
+                        printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
+                    else
+                        printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
+                }
+                else {
+                    printf("cp %d ", s);
+                }
+                printf("time %lu pv %s", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
+                print_pv(board, d/10);
+                printf("\n");
+            }
+        }
         reverse_move(board, &best);
     } else {
         move_t temp;
@@ -786,7 +827,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
                     print_pv(board, d/10);
                     printf("\n");
                 }
-                if (s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
+                if (!infinite && s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
                     break;
                 }
             }

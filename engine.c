@@ -131,6 +131,20 @@ void save_opening_table(char * fname) {
     fclose(file);
 }
 
+// The value of a draw.
+// Normally, it is 0, but against weaker opponents,
+// we can set it to negative, so that even if we are behind,
+// we try to win instead of draw
+// Currently, it does nothing.
+int draw_value = 0;
+int engine_set_param(int name, int value) {
+    if (name == ACE_PARAM_CONTEMPT) {
+        draw_value = value;
+        return 0;
+    }
+    return 1;
+}
+
 void engine_init(int flags) {
     static int initialized = 0;
     if (!initialized) {
@@ -155,6 +169,7 @@ int engine_reset_hashmap(int hashsize) {
     if (posix_memalign((void **) &ttable, 64, hashmapsize * sizeof(union transposition))) {
         return 1;
     }
+    memset(ttable, 0, hashmapsize * sizeof(union transposition));
     return 0;
 }
 
@@ -169,6 +184,12 @@ char* engine_new_game_from_position(char* position) {
     state.won = 0;
     srand(time(NULL));
     return pos;
+}
+
+void engine_clear_state() {
+    memset(position_count_table, 0, sizeof(position_count_table));
+    memset(ttable, 0, hashmapsize * sizeof(union transposition));
+    memset(history, 0, 2 * 64 * 64 * sizeof(int));
 }
 
 int engine_score() {
@@ -249,10 +270,12 @@ static int engine_move_internal(move_t move) {
 
     // Checkmate
     if (mvs.check && nmoves == 0) {
-        if (state.board.who)
-            return GAME_BLACK_WON;
-        else
-            return GAME_WHITE_WON;
+        if (state.board.who) {
+            state.won = GAME_WHITE_WON;
+        }
+        else {
+            state.won = GAME_BLACK_WON;
+        }
     }
     // Stalemate
     else if (nmoves == 0 || state.board.nmovesnocapture >= 100)
@@ -283,7 +306,7 @@ int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc
     else
         timer = new_timer(wtime, btime, winc, binc, moves_to_go, state.board.who);
 
-    move_t ret = find_best_move(&state.board, timer, state.board.who, state.flags);
+    move_t ret = find_best_move(&state.board, timer, state.board.who, state.flags, infinite_mode);
     if (state.flags & FLAGS_UCI_MODE)
         move_to_algebraic(engine_get_board(), move, &ret);
     else

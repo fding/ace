@@ -17,6 +17,7 @@
 
 
 static int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs);
+static int board_score_middlegame(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta);
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
  * Evaluation CODE
@@ -37,40 +38,39 @@ int knight_table[64] = {
     -15, 0,  10,  15,  15,  10, 0, -15,
     -20, -15, -10, -10, -10, -10, -15, -20,
     -40, -20, -15, -15, -15, -15, -20, -40,
-
 };
 
 int bishop_table[64] = {
     -15, -10, -12, -14, -14, -12, -10, -15,
-    -5,  10,  8,  5,  5,  8,  10, -5,
-     2,  15,  13,  10,  10,  13,  15, 2,
-     0,  15,  13,  10,  10,  13,  15, 0,
-    -5,  10,  8,  5,  5,  8,  10, -5,
-    -10,  5,  0,  -2,  -2,  0,  5, -10,
     -13,  5,  -5,  -5,  -5,  -5,  5, -13,
-    -20, -10, -15, -20, -20, -15, -10, -20,
+    -5,  10,  8,  5,  5,  8,  10, -5,
+     0,  15,  13,  10,  10,  13,  15, 0,
+     2,  15,  13,  10,  10,  13,  15, 2,
+    -10,  5,  0,  -2,  -2,  0,  5, -10,
+    -5,  10,  8,  5,  5,  8,  10, -5,
+    -15, -10, -12, -14, -14, -12, -10, -15,
 };
 
 int rook_table[64] = {
     -10, -5, 0, 5, 5, 0, -5, -10,
     -10, -5, 0, 5, 5, 0, -5, -10,
-    -10, -5, 0, 5, 5, 0, -5, -10,
-    -10, -5, 0, 5, 5, 0, -5, -10,
-    -10, -5, 0, 5, 5, 0, -5, -10,
-    -10, -5, 0, 5, 5, 0, -5, -10,
+    -10, -4, 1, 6, 6, 1, -4, -10,
+    -10, -4, 1, 6, 6, 1, -4, -10,
+    -10, -4, 1, 6, 6, 1, -4, -10,
+    -10, -4, 1, 6, 6, 1, -4, -10,
     -10, -5, 0, 5, 5, 0, -5, -10,
     -10, -5, 0, 5, 5, 0, -5, -10,
 };
 
 int queen_table[64] = {
-    0, 2, 5, 10, 10, 5, 2, 0,
-    0, 2, 5, 10, 10, 5, 2, 0,
-    0, 2, 5, 10, 10, 5, 2, 0,
-    0, 0, 5, 10, 10, 5, 0, 0,
-    0, 0, 5, 10, 10, 5, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0, 0, 0,
-    -2, 0, 0, 0, 0, 0, 0, -2,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
 };
 
 int king_table[64] = {
@@ -81,24 +81,67 @@ int king_table[64] = {
     -50, -50, -50, -60, -60, -50, -50, -50,
     -20, -20, -40, -50, -50, -40, -20, -20,
     -10, -10, -10, -20, -20, -10, -10, -10,
-    10, 10, 10, -10, -10, 10, 10, 10,
+    10, 12, 10, -10, -10, 10, 12, 10,
+
 };
 
 int king_table_endgame[64] = {
-    -80, -50, -30, -30, -30, -30, -50, -80,
-    -50, -20, -20, -20, -20, -20, -20, -50,
-    -30, -20,  30,  30,  30,  30, -20, -30,
-    -30, -20,  30,  40,  40,  30, -20, -30,
-    -30, -20,  30,  40,  40,  30, -20, -30,
-    -30, -20,  30,  30,  30,  30, -20, -30,
-    -50, -20, -20, -20, -20, -20, -20, -50,
-    -80, -50, -30, -30, -30, -30, -50, -80,
+    -30, -15, -15, -15, -15, -15, -15, -30,
+     -10,  -5,  0,  0,  0, 0,  -5,  -10,
+     0,  15,  25,  35,  35,  25,  15,  0,
+    -10, 10,  20,  30,  30,  20, 10, -10,
+    -10, 5,  15,  20,  20,  15, 0, -10,
+    -15, 0,  10,  15,  15,  10, 0, -15,
+    -20, -15, -10, -10, -10, -10, -15, -20,
+    -40, -20, -15, -15, -15, -15, -20, -40,
+};
+
+int king_attacker_table[100] = {
+    0,  0,   2,   3,   4,   5,   9,   13,  16,  19,
+  23,  26,  30,  35,  39,  44,  50,  56,  62, 68,
+  75,  82,  85,  89,  97, 105, 113, 122, 131, 140,
+  150, 169, 180, 191, 202, 213, 225, 237, 248, 260,
+  272, 283, 295, 307, 319, 330, 342, 354, 366, 377,
+  389, 401, 412, 424, 436, 448, 459, 471, 483, 494,
+  500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+ 500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+ 500, 500, 500, 500, 500, 500, 500, 500, 500, 500,
+ 500, 500, 500, 500, 500, 500, 500, 500, 500, 500
+};
+
+int pawn_shield_table[100] = {
+    0, 0, 0, 0, 0, 1, 1, 2, 3, 4, 6, 8, 11, 13, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+};
+
+int pawn_storm_table[100] = {
+    3,  3,   5,   6,   7,   8,   9,   11, 12, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
 };
 
 #define BLACK_CENTRAL_SQUARES 0x0000281428140000ull
 #define WHITE_CENTRAL_SQUARES 0x0000142814280000ull
 
-int material_for_player(struct board* board, unsigned char who) {
+int simplified_material_for_player(struct board* board, side_t who) {
+    return popcnt(board->pieces[who][PAWN]) +
+        3 * popcnt(board->pieces[who][KNIGHT]) +
+        3 * popcnt(board->pieces[who][BISHOP]) +
+        5 * popcnt(board->pieces[who][ROOK]) +
+        9 * popcnt(board->pieces[who][QUEEN]);
+}
+
+int material_for_player(struct board* board, side_t who) {
     return 100 * popcnt(board->pieces[who][PAWN]) +
         300 * popcnt(board->pieces[who][KNIGHT]) +
         315 * popcnt(board->pieces[who][BISHOP]) +
@@ -106,7 +149,7 @@ int material_for_player(struct board* board, unsigned char who) {
         880 * popcnt(board->pieces[who][QUEEN]);
 }
 
-int material_for_player_endgame(struct board* board, unsigned char who) {
+int material_for_player_endgame(struct board* board, side_t who) {
     return 135 * popcnt(board->pieces[who][PAWN]) +
         275 * popcnt(board->pieces[who][KNIGHT]) +
         300 * popcnt(board->pieces[who][BISHOP]) +
@@ -142,10 +185,7 @@ int material_for_player_endgame(struct board* board, unsigned char who) {
  *  2. Finer material nuances, like material hash table
  */
 int board_score(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta) {
-    int rank, file;
-
     int nmoves = mvs->nmoves;
-
     if (nmoves == 0 && mvs->check) {
         if (who)
             return (CHECKMATE - board->nmoves);
@@ -156,19 +196,46 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     if (nmoves == 0) return 0;
     if (board->nmovesnocapture >= 50) return 0;
 
+    int phase = MIN(8, popcnt(board_occupancy(board, 0) ^ P2BM(board, WHITEPAWN)) +
+            popcnt(board_occupancy(board, 1) ^ P2BM(board, BLACKPAWN)) - 2);
+
+    if (phase >= 8) {
+        return board_score_middlegame(board, who, mvs, alpha, beta);
+    }
+
+    if (phase <= 3) {
+        return board_score_endgame(board, who, mvs);
+    }
+
+    int score_mg = board_score_middlegame(board, who, mvs, alpha, beta);
+    int score_eg = board_score_endgame(board, who, mvs);
+
+    return (phase * score_mg  + (8 - phase) * score_eg) / 8;
+}
+
+static int board_score_middlegame(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta) {
     int score = 0;
     uint64_t temp;
     int square, count;
+    int rank, file;
 
     int whitematerial, blackmaterial;
     whitematerial = material_for_player(board, 0);
     blackmaterial = material_for_player(board, 1);
     score = whitematerial - blackmaterial;
 
-    uint64_t pawns[2], minors[2], majors[2], pieces[2], kings[2], outposts[2], holes[2];
+    uint64_t pawns[2], bishops[2], rooks[2], queens[2],
+             minors[2], majors[2], pieces[2], kings[2], outposts[2], holes[2];
 
     pawns[0] = P2BM(board, WHITEPAWN);
     pawns[1] = P2BM(board, BLACKPAWN);
+    bishops[0] = P2BM(board, WHITEBISHOP);
+    bishops[1] = P2BM(board, BLACKBISHOP);
+    rooks[0] = P2BM(board, WHITEROOK);
+    rooks[1] = P2BM(board, BLACKROOK);
+    queens[0] = P2BM(board, WHITEQUEEN);
+    queens[1] = P2BM(board, BLACKQUEEN);
+
     minors[0] = P2BM(board, WHITEKNIGHT) | P2BM(board, WHITEBISHOP);
     minors[1] = P2BM(board, BLACKKNIGHT) | P2BM(board, BLACKBISHOP);
     majors[0] = P2BM(board, WHITEROOK) | P2BM(board, WHITEQUEEN);
@@ -183,15 +250,6 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
     nmajors[1] = popcnt(majors[1]);
     nminors[1] = popcnt(minors[1]);
 
-    endgame = ((nminors[0] <= 2 && nmajors[0] <= 1) ||
-            (nminors[0] == 0 && nmajors[0] <= 2) ||
-            (nmajors[0] == 0)) &&
-            ((nminors[1] <= 2 && nmajors[1] <= 1) ||
-            (nminors[1] <= 2 && nmajors[1] <= 1) ||
-            (nmajors[1] == 0));
-
-    if (endgame)
-        return board_score_endgame(board, who, mvs);
 
     // Positional scores don't have THAT huge of an effect, so if the situation is already hopeless, give up
     if (score + 300 < alpha) {
@@ -229,26 +287,45 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
 
     for (int w = 0; w < 2; w++) {
         int subscore = 0;
+        int file_occupied[8];
+        memset(file_occupied, 0, 8 * sizeof(int));
+
+        int king_attackers = 0;
+        uint64_t king_zone = kings[1 - w];
+        king_zone |= (kings[1 - w] & (~HFILE)) >> 1;
+        king_zone |= (kings[1 - w] & (~AFILE)) << 1;
+        uint64_t king_row = king_zone;
+        king_zone |= (king_row & ~(RANK1)) << 8;
+        king_zone |= (king_row & ~(RANK8)) >> 8;
+        if (1 - w) {
+            king_zone |= (king_zone & (~RANK1)) >> 8;
+            king_zone |= (king_zone & (~RANK1)) >> 8;
+        } else {
+            king_zone |= (king_zone & (~RANK8)) << 8;
+            king_zone |= (king_zone & (~RANK8)) << 8;
+        }
 
         bmloop(P2BM(board, 6 * w + KNIGHT), square, temp) {
             file = square & 0x7;
             int loc = (w == 0) ? (56 - square + file + file) : square;
             subscore += knight_table[loc];
             // Outposts are good
-            if ((1ull << square) & outposts[w]) subscore += 35;
-            else if ((1ull << square) & holes[w]) subscore += 20;
+            if ((1ull << square) & outposts[w]) subscore += 31;
+            else if ((1ull << square) & holes[1 - w]) subscore += 21;
             uint64_t attack_mask = attack_set_knight(square, pieces[w], pieces[1 - w]);
-            subscore += 6 * popcnt(attack_mask);
-#ifdef UNDEFENDED
+            subscore += 2 * popcnt(attack_mask);
+            if (attack_mask & king_zone)
+                king_attackers += 2;
+
+            // Hanging piece penalty
+            if (!(attacks[w] & (1ull << square)))
+                subscore -= 2;
             if ((1ull << square) & undefended[w]) {
-                if (who == w)
-                    subscore -= 30;
-                else
-                    subscore -= 150;
+                subscore -= 5;
             }
-            if (((1ull << square) & pawn_attacks[1 - w]) && who)
-                subscore -= 60;
-#endif
+            if ((1ull << square) & pawn_attacks[1 - w])
+                subscore -= 5;
+
 #ifdef PINNED
             // Pinned pieces aren't great, especially knights
             if ((1ull << square) & mvs->pinned)
@@ -262,19 +339,22 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             int loc = (w == 0) ? (56 - square + file + file) : square;
             subscore += bishop_table[loc];
             count += 1;
-            if ((1ull << square) & outposts[w]) subscore += 15;
+            if ((1ull << square) & outposts[w]) subscore += 14;
+            else if ((1ull << square) & holes[1 - w]) subscore += 4;
             uint64_t attack_mask = attack_set_bishop(square, pieces[w], pieces[1 - w]);
-            subscore += 4 * popcnt(attack_mask);
-#ifdef UNDEFENDED
+            subscore += popcnt(attack_mask);
+            if (attack_mask & king_zone)
+                king_attackers += 2;
+
+            // Hanging piece penalty
+            if (!(attacks[w] & (1ull << square)))
+                subscore -= 2;
             if ((1ull << square) & undefended[w]) {
-                if (who == w)
-                    subscore -= 30;
-                else
-                    subscore -= 150;
+                subscore -= 5;
             }
-            if (((1ull << square) & pawn_attacks[1 - w]) && who)
-                subscore -= 60;
-#endif
+            if ((1ull << square) & pawn_attacks[1 - w])
+                subscore -= 5;
+
             // At least before end-game, central pawns on same
             // colored squares are bad for bishops
             if ((1ull << square) & BLACK_CENTRAL_SQUARES) {
@@ -300,67 +380,78 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             if ((w && rank == 1) || (!w && rank == 6)) {
                 // TODO: only do this if king is on rank 8
                 // or if there are pawns on rank 7
-                subscore += 50;
-            }
-            if ((1ull << square) & outposts[w]) subscore += 20;
-            // Rooks on open files are great
-            if (!((AFILE << file) & (pawns[0] | pawns[1])))
-                subscore += 30;
-            // Rooks on semiopen files are good
-            else if (!((AFILE << file) & pawns[w])) {
                 subscore += 20;
             }
-
-            // Doubled rooks are very powerful.
-            // We add 80 (40 on this, 40 on other)
-            if ((AFILE << file) & (majors[w] ^ (1ull << square)))
-                subscore += 25;
-            uint64_t attack_mask = attack_set_rook(square, pieces[w], pieces[1 - w]);
-            subscore += 4 * popcnt(attack_mask);
-
-#ifdef UNDEFENDED
-            if ((1ull << square) & undefended[w]) {
-                if (who == w)
-                    subscore -= 30;
-                else
-                    subscore -= 300;
+            if ((1ull << square) & outposts[w]) subscore += 15;
+            // Rooks on open files are great
+            if (!file_occupied[file]) {
+                if (!((AFILE << file) & (pawns[0] | pawns[1])))
+                    subscore += 10;
+                // Rooks on semiopen files are good
+                else if (!((AFILE << file) & pawns[w])) {
+                    subscore += 5;
+                }
             }
-            if (((1ull << square) & pawn_attacks[1 - w]) && who)
-                subscore -= 100;
-#endif 
+            else {
+                subscore -= 5;
+            }
+            file_occupied[file] = 1;
+
+            uint64_t attack_mask = attack_set_rook(square, pieces[w], pieces[1 - w]);
+            uint64_t attack_mask_only_pawn = attack_set_rook(square, pawns[w], pieces[1 - w]);
+            subscore += popcnt(attack_mask);
+            if (attack_mask & king_zone)
+                king_attackers += 3;
+            else if (attack_mask_only_pawn & king_zone)
+                king_attackers += 2;
+
+            // Hanging piece penalty
+            if (!(attacks[w] & (1ull << square)))
+                subscore -= 2;
+            if ((1ull << square) & undefended[w]) {
+                subscore -= 5;
+            }
+            if ((1ull << square) & pawn_attacks[1 - w])
+                subscore -= 5;
 
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned)
                 subscore -= 50;
 #endif
         }
+
+
         bmloop(P2BM(board, 6 * w + QUEEN), square, temp) {
             file = square & 0x7;
             int loc = (w == 0) ? (56 - square + file + file) : square;
             subscore += queen_table[loc];
             // A queen counts as a rook
-            if (!((AFILE << file) & (pawns[0] | pawns[1])))
-                subscore += 20;
-            else if ((AFILE << file) & pawns[1 - w])
-                subscore += 10;
-
-            if ((AFILE << file) & (majors[w] ^ (1ull << square)))
-                subscore += 30;
+            if (!file_occupied[file]) {
+                if (!((AFILE << file) & (pawns[0] | pawns[1])))
+                    subscore += 15;
+                else if ((AFILE << file) & pawns[1 - w])
+                    subscore += 5;
+            } else {
+                subscore -= 5;
+            }
+            file_occupied[file] = 1;
 
             uint64_t attack_mask = attack_set_queen(square, pieces[w], pieces[1 - w]);
-            subscore += popcnt(attack_mask & (~attacks[1 - w]));
+            uint64_t attack_mask_only_pawn = attack_set_rook(square, pawns[w], pieces[1 - w]);
             subscore += popcnt(attack_mask) / 2;
+            if (attack_mask & king_zone)
+                king_attackers += 5;
+            else if (attack_mask_only_pawn & king_zone)
+                king_attackers += 3;
 
-#ifdef UNDEFENDED
+            // Hanging piece penalty
+            if (!(attacks[w] & (1ull << square)))
+                subscore -= 2;
             if ((1ull << square) & undefended[w]) {
-                if (who == w)
-                    subscore -= 40;
-                else
-                    subscore -= 600;
+                subscore -= 5;
             }
-            if (((1ull << square) & pawn_attacks[1 - w]) && who)
-                subscore -= 200;
-#endif
+            if ((1ull << square) & pawn_attacks[1 - w])
+                subscore -= 5;
 
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned)
@@ -373,54 +464,55 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
         int loc = (w == 0) ? (56 - square + file + file) : square;
         subscore += king_table[loc];
 
-        mask = AFILE << file;
+        uint64_t opponent_king_mask;
+        int opponent_king_file = LSBINDEX(kings[1 - w]) % 8;
+        if (opponent_king_file <= 2)
+            opponent_king_mask = AFILE | (AFILE >> 1) | (AFILE >> 2);
+        if (opponent_king_file >= 5)
+            opponent_king_mask = HFILE | (HFILE << 1) | (HFILE << 2);
+
+        mask = (AFILE << file);
         if (file != 0)
-            mask |= (AFILE << (file - 1));
+            mask |= (AFILE << file - 1);
         if (file != 7)
-            mask |= (AFILE << (file + 1));
-
+            mask |= (AFILE << file + 1);
         // open files are bad news for the king
-        if (!((AFILE << file) & pawns[w]))
-            subscore -= 15;
+        subscore -= 2 * (3 - popcnt((pawns[w] | pawns[1-w]) & mask));
+        subscore -= 2 * (3 - popcnt((pawns[1-w]) & mask));
 
-        uint64_t mask1, mask2;
+        if (file <= 2)
+            mask = AFILE | (AFILE >> 1) | (AFILE >> 2);
+        else if (file >= 5)
+            mask = HFILE | (HFILE << 1) | (HFILE << 2);
+
+        uint64_t mask1, mask2, mask3, mask4;
         if (w) {
-            mask1 = mask << 40;
-            mask2 = mask << 32;
+            mask1 = mask << 40; // rank 2 and 3
+            mask2 = opponent_king_mask >> 24; // rank 4, 5, 6, 7
+            mask3 = opponent_king_mask >> 32;
+            mask4 = opponent_king_mask >> 40;
         } else {
             mask1 = mask >> 40;
-            mask2 = mask >> 32;
+            mask2 = opponent_king_mask << 24;
+            mask3 = opponent_king_mask << 32;
+            mask4 = opponent_king_mask << 40;
         }
         // we want a pawn shield
-        if (!(mask1 & pawns[w]))
-            subscore -= 30;
-        // Uh-oh -- maybe a pawn storm!
-        if (mask2 & pawns[1 - w])
-            subscore -= 30;
+        subscore += pawn_shield_table[2 * popcnt(bishops[1-w]) + 3 * popcnt(rooks[1-w]) + 5 * popcnt(queens[1-w])]
+            * MAX(2, popcnt(mask1 & pawns[w]));
 
-        /*
-        uint64_t king_movements;
-        king_movements = kings[0] | attack_set_king(square, pieces[0], pieces[1]);
-        count = popcnt(king_movements & (~attacks[1 - w]));
-        if (who == w && mvs->check) {
-            if (count <= 3) subscore -= (3 - count) * 30;
-            if (count == 0) subscore -= 30;
-            subscore -= 20;
-        } else if (count <= 1 && (king_movements & attacks[1 - w])) {
-            subscore -= (2 - count) *30;
+        if (mask3 & pawns[1-w]) {
+            // we also want a pawn storm
+            subscore += pawn_storm_table[king_attackers] * popcnt(mask2 & pawns[w]);
         }
-        */
+
+        subscore += king_attacker_table[king_attackers];
 
         if (w) score -= subscore;
         else score += subscore;
     }
 
-    /*
-    // castling is almost always awesome
-    score += (board->castled & 1) * 20 - ((board->castled & 2) >> 1) * 20;
-    */
     score += ((board->cancastle & 12) != 0) * 10 - ((board->cancastle & 3) != 0 ) * 10;
-
     return score;
 }
 
@@ -428,7 +520,7 @@ static int dist(int sq1, int sq2) {
     int rank1, file1, rank2, file2;
     rank1 = sq1 / 8;
     file1 = sq1 % 8;
-    rank2 = sq1 / 8;
+    rank2 = sq2 / 8;
     file2 = sq2 % 8;
     int dh = abs(rank1-rank2);
     int dv = abs(file1-file2);
@@ -437,7 +529,7 @@ static int dist(int sq1, int sq2) {
 }
 
 
-int distance_to_score[9] = {40, 40, 40, 30, 20, 15, 10, 5, 0};
+int distance_to_score[9] = {21, 21, 18, 15, 12, 9, 6, 3, 0};
 
 // Table of how easy certain endgames are to win
 // This is a hash table, computed via:
@@ -727,13 +819,13 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         int dist_from_wking = dist(square, wkingsquare);
         int dist_from_bking = dist(square, bkingsquare);
         int dist_score = 0;
-        dist_score += (dist_from_bking - dist_from_wking) * 15;
+        dist_score += (dist_from_bking - dist_from_wking) * 5;
         // passed pawns are good
         if (pstruct->passed_pawns[0] & (1ull << square)) {
-            dist_score += (dist_from_bking - dist_from_wking) * 30;
+            dist_score += (dist_from_bking - dist_from_wking) * 5;
         }
         if (endgame_type == EG_KPKP)
-            dist_score *= 2;
+            dist_score *= 4;
 
         score += dist_score;
     }
@@ -742,17 +834,17 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
         int dist_from_wking = dist(square, wkingsquare);
         int dist_from_bking = dist(square, bkingsquare);
         int dist_score = 0;
-        dist_score += (dist_from_bking - dist_from_wking) * 15;
+        dist_score += (dist_from_bking - dist_from_wking) * 5;
 
         if (pstruct->passed_pawns[0] & (1ull << square)) {
-            dist_score += (dist_from_bking - dist_from_wking) * 30;
+            dist_score += (dist_from_bking - dist_from_wking) * 5;
         }
 
         if (endgame_type == EG_KPKP) {
-            dist_score *= 2;
+            dist_score *= 4;
         }
 
-        score -= dist_score;
+        score += dist_score;
     }
 
     bmloop(P2BM(board, WHITEKNIGHT), square, temp) {
@@ -783,47 +875,27 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
     bmloop(P2BM(board, WHITEROOK), square, temp) {
         file = square & 0x7;
-        // Rooks on open files are great
-        if (!((AFILE << file) & (pawns[0] | pawns[1])))
-            score += 30;
-        // Rooks on semiopen files are good
-        else if ((AFILE << file) & pawns[1])
-            score += 20;
 
         // Doubled rooks are very powerful.
-        // We add 80 (40 on this, 40 on other)
         if ((AFILE << file) & (majors[0] ^ (1ull << square)))
-            score += 30;
+            score += 5;
     }
     bmloop(P2BM(board, BLACKROOK), square, temp) {
         file = square & 0x7;
-        if (!((AFILE << file) & (pawns[0] | pawns[1])))
-            score -= 30;
-        else if ((AFILE << file) & pawns[0])
-            score -= 20;
 
         if ((AFILE << file) & (majors[1] ^ (1ull << square)))
-            score -= 30;
+            score -= 5;
     }
     bmloop(P2BM(board, WHITEQUEEN), square, temp) {
         file = square & 0x7;
-        // A queen counts as a rook
-        if (!((AFILE << file) & (pawns[0] | pawns[1])))
-            score += 20;
-        else if ((AFILE << file) & pawns[1])
-            score += 10;
 
         if ((AFILE << file) & (majors[0] ^ (1ull << square)))
-            score += 30;
+            score += 5;
     }
     bmloop(P2BM(board, BLACKQUEEN), square, temp) {
-        if (!((AFILE << file) & (pawns[0] | pawns[1])))
-            score -= 20;
-        else if ((AFILE << file) & pawns[0])
-            score -= 10;
 
         if ((AFILE << file) & (majors[1] ^ (1ull << square)))
-            score -= 30;
+            score -= 5;
     }
 
     int winning_side = 0;

@@ -161,7 +161,7 @@ int main(int argc, char* argv[]) {
                 }
                 if (strcmp(buffer, "exit") == 0)
                     exit(0);
-                if (!engine_move(buffer)) {
+                if (engine_move(buffer) != -1) {
                     break;
                 }
                 fprintf(stderr, "Invalid move (%s)!\n", buffer);

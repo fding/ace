@@ -38,6 +38,7 @@ extern union transposition* ttable;
 
 
 extern int hashmapsize;
+extern int draw_value;
 
 typedef int16_t piece_t;
 

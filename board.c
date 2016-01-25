@@ -217,8 +217,11 @@ char* board_init_from_fen(struct board* out, char* position) {
         rank = *position - '1';
         if (out->who) rank += 1;
         else rank -= 1;
-        out->enpassant = 1ull << (rank * 8 + file);
-        out->hash ^= enpassant_hash_codes[file];
+        uint64_t mask = 1ull << (rank * 8 + file);
+        if ((((mask & ~AFILE) >> 1) | ((mask & ~HFILE) << 1)) & out->pieces[out->who][PAWN]) {
+            out->enpassant = 1ull << (rank * 8 + file);
+            out->hash ^= enpassant_hash_codes[file];
+        }
         position++;
     }
 
@@ -672,8 +675,10 @@ int apply_move(struct board* board, struct delta* move) {
         board->nmovesnocapture = 0;
         int nmove = move->square2 - move->square1;
         if (nmove == 16 || nmove == -16) {
-            hupdate ^= enpassant_hash_codes[move->square2 % 8];
-            board->enpassant = mask2;
+            if ((((mask2 & ~AFILE) >> 1) | ((mask2 & ~HFILE) << 1)) & board->pieces[1-who][PAWN]) {
+                hupdate ^= enpassant_hash_codes[move->square2 % 8];
+                board->enpassant = mask2;
+            }
         }
     }
 
