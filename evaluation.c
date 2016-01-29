@@ -162,23 +162,25 @@ int material_for_player_endgame(struct board* board, side_t who) {
  * into consideration:
  *  1. Material
  *  2. Piece location (differs for king between endgame and midgame)
- *  3. Presence of bishop pair (half a pawn)
- *  4. Pawn structure
+ *  3. Mobility
+ *  4. Presence of bishop pair (half a pawn)
+ *  5. Pawn structure
  *      a. passed pawn (bonus)
  *      b. isolated pawn (penalty)
  *      c. doubled pawns (penalty)
- *  5. Doubled rooks (bonus)
- *  6. Rooks on open files (bonus, 1/5 of a pawn)
- *  7. Rooks on semiopen files (bonus, 1/10 of a pawn)
- *  8. Central pawns on same color for bishop (penalty)
- *  9. Undefended attacked pieces (heavy penalty)
+ *      d. backward pawns (penalty)
+ *      e. connected pawns (bonus)
+ *  6. Doubled rooks (bonus)
+ *  7. Rooks on open files (bonus)
+ *  8. Rooks on semiopen files (bonus)
+ *  9. Central pawns on same color for bishop (penalty)
  *  10. Number of available attacks, disregarding king pins (bonus)
  *  11. Castling rights (penalty if you can't castle)
  *  12. King safety
  *      a. Open file (penalty)
- *      b. Lack of pawn shield for castled king (heavy penalty)
+ *      b. Lack of pawn shield for castled king (penalty)
  *      c. Pawn storm (bonus for attacker)
- *  13. Trading down bonus
+ *      d. enemy pieces attacking king zone (penalty)
  *
  * TODO list:
  *  1. Endgame table

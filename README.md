@@ -1,17 +1,24 @@
 # ACE (A Chess Engine)
-ACE is a chess engine that communicates via standard in and standard out. To run ACE, type
+ACE is a chess engine that communicates via standard in and standard out. To run the console
+version of ACE, type
 
 `./chess --white=human --black=computer`
 
 on the command line.
+To run the uci engine, run
+
+`./ace-uci`
 
 ## Compilation
 Run `make all` to compile ACE and related binaries.
 
 ## Binaries
-The following binaries are created: chess, perft, benchmark, score, generate_magic, and playself.
+The following binaries are created: chess, ace-uci, perft, benchmark, score, generate_magic, and playself.
 
-Chess is the main engine.
+Chess is the console version of the game, allowing you to play the computer or watch
+the computer play itself.
+
+Ace-uci is a chess engine following the UCI protocol.
 
 Perft runs perft (https://chessprogramming.wikispaces.com/Perft), which is used to test and benchmark the move generator. Running
 `make test` will run perft against a selection of position and tabulated perft numbers (representing the number of nodes at depth d
@@ -30,19 +37,19 @@ These chess engines run in separate processes communicating via pipes. This is u
 Finally, generate_magic is an internal binary used to generate some magic numbers for ACE.
 
 ## Protocol
-ACE expects moves to be inputted via standard in and outputs its moves to standard out (and prints the board to standard error).
-Moves basically follow the extended algebraic notation: e5e8 moves a piece on e5 to e8, capturing if necessary.
-There are two extensions: for castling, specify the king's current square and the king's target, followed by the letter 'C', followed by
-the square of the rook, like 'e1g1Ch1'. For promotions, follow the move by the piece to promote to, like 'e7e8Q'.
+
+The Chess command line client reads moves from standard in and outputs its moves to standard out
+(and prints out the board to standard error).
+Moves should follow algebraic notation.
+
+Ace-uci follows the UCI protocol.
 
 ## Capabilities
-ACE should follow all the rules of chess (although there are some rare bugs in the move generation to be rooted out),
+ACE follows all the rules of chess,
 including castling, en passant, 3-fold repetitions, and 50 move draws.
-It uses an iterative deepening framework with an adjustible maximum thinking time (default 7 seconds),
-using an alpha beta search that exhaustly analyzes move combinations to at least depth 6
-(~12-14 in the endgame; it also considers "interesting" moves like captures and checks to up to depth 8-12 in the middle game).
-It has a small opening book and maintains a large in memory transposition table to speed up move searching.
-Its endgame ability is fairly lacking, however.
+It uses an iterative deepening framework and understands tournament time controls.
+The engine can search to depth 8 in less than a second,
+and has an effective branching factor of around 2.
 
 ## Internals
 ACE uses bitboards to represent pieces.

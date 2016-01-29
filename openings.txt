@@ -1,4 +1,3 @@
-# Opening book. preceding number is 1, 2, 3, 4, 5, where 3 is neutral, 4 is advantage white, and 5 is massive white advantage
 # e4 openings
 # e4 e5
 # Roy Lopez
@@ -11,8 +10,14 @@
 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 d6 5. Bc6 bxc6 6. d4
 # Arkhangelsk Defence
 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 b5 6. Bb3 Bb7
-# Roy Lopez, Main line
-1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 Be7 6. Re1 b5 7. Bb3 d6 8. c3 0-0
+# Roy Lopez, Main line (Chigorin variation)
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 Be7 6. Re1 b5 7. Bb3 d6 8. c3 0-0 9. h3 Na5 10. Bc2 c5 11. d4 Qc7
+# Roy Lopez, Main line (Breyer variation)
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 Be7 6. Re1 b5 7. Bb3 d6 8. c3 0-0 9. h3 Nb8 10. d4 Nbd7 11. Nbd2 Bb7 12. Bc2 Re8 13. Nf1 Bf8 14. Ng3 g6
+# Roy Lopez, Main line (Zaitsev variation)
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 Be7 6. Re1 b5 7. Bb3 d6 8. c3 0-0 9. h3 Bb7 10. d4 Re8 11. Nbd2 Bf8
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 Be7 6. Re1 b5 7. Bb3 d6 8. c3 0-0 9. d3? Bg4
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. 0-0 Be7 6. Re1 b5 7. Bb3 d6 8. c3 0-0 9. d4? Bg4
 
 # Roy Lopez, Exchange variation
 1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Bxc6 dxc6 5. 0-0 Bg4 6. h3 h5

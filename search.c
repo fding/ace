@@ -571,7 +571,8 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // TODO: ply > 1?
     if (depth >= 20 && nullmode == 0 && !out.check && (board->pieces[who][KNIGHT] | board->pieces[who][BISHOP] | board->pieces[who][ROOK] | board->pieces[who][QUEEN])) {
         uint64_t old_enpassant = board_flip_side(board, 1);
-        score = -search(board, timer, &temp, NULL, depth - 30, -beta, -beta+1, extensions, 1, 1 - who);
+        int rdepth = depth - 30 - depth / 4;
+        score = -search(board, timer, &temp, NULL, rdepth, -beta, -beta+1, extensions, 1, 1 - who);
         if (score >= beta) {
             ply--;
             board_flip_side(board, old_enpassant);
@@ -580,7 +581,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         } else {
             // Mate threat extension: if not doing anything allows opponents to checkmate us,
             // we are in a potentially dangerous situation, so extend search
-            score = search(board, timer, &temp, NULL, depth - 30, CHECKMATE/2 - 1, CHECKMATE/2, extensions, 1, 1 - who);
+            score = search(board, timer, &temp, NULL, rdepth, CHECKMATE/2 - 1, CHECKMATE/2, extensions, 1, 1 - who);
             board_flip_side(board, old_enpassant);
             board->enpassant = old_enpassant;
             if (score > CHECKMATE/2) {
@@ -700,7 +701,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     alpha = -INFINITY;
     beta = INFINITY;
 
-    static int leeway_table[32] = {40, 30, 30, 10, 10, 10, 10, 10,
+    static int leeway_table[32] = {40, 30, 20, 10, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
@@ -719,7 +720,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
         // Analyze this position so that when we leave the opening,
         // we have some entries in the transposition table
         if (infinite) {
-            for (d = 60; d < 400; d+=20) {
+            for (d = 60; d < 400; d+=10) {
                 s = search(board, timer, &temp, NULL, d, alpha, beta, 30, 0 /* null-mode */, 1 - who);
                 if (out_of_time) break;
                 if (flags & FLAGS_UCI_MODE) {
