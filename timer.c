@@ -1,6 +1,7 @@
-#include <time.h>
 #include <stdlib.h>
+#include <time.h>
 #include "timer.h"
+#include "util.h"
 
 struct timer * new_timer(time_t wtime, time_t btime, time_t winc, time_t binc, int movestogo, int who) {
     struct timer * timer = malloc(sizeof(struct timer));
@@ -16,7 +17,7 @@ struct timer * new_timer(time_t wtime, time_t btime, time_t winc, time_t binc, i
     timer->start = 0;
     if (movestogo) {
         timer->allotted_time = timer->time / movestogo;
-        timer->max_time = 2 * timer->time / movestogo;
+        timer->max_time = MIN(2 * timer->time / movestogo, timer->time / MIN(2, movestogo));
         timer->increment = 1.1;
     } else {
         timer->allotted_time = timer->time / 32;
@@ -46,8 +47,6 @@ int timer_continue(struct timer * timer) {
     }
     return 1;
 }
-
-#define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
 // Award increments if there is large fluctuation,
 // deduct increments if there is little fluctuation

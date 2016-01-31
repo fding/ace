@@ -20,7 +20,6 @@
 #include "ace.h"
 
 int main(int argc, char* argv[]) {
-    int depth = 6;
     int i = 0;
 
     engine_init(0);

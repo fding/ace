@@ -254,7 +254,7 @@ static int transform_checkmate(struct board* board, union transposition* trans) 
     return trans->metadata.score;
 }
 
-static int ttable_search(struct board* board, struct deltaset* set, int depth, move_t* best, move_t* move, int * alpha, int beta) {
+static int ttable_search(struct board* board, int depth, move_t* best, move_t* move, int * alpha, int beta) {
     union transposition * stored;
     int score;
     move->piece = -1;
@@ -327,7 +327,6 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     generate_captures(&out, board);
 
     struct deltaset out1;
-    generate_moves(&out1, board);
 
     nmoves = out.nmoves;
 
@@ -339,10 +338,12 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
         score = transform_checkmate(board, stored);
         if (!(stored->metadata.type & EXACT) && !((stored->metadata.type & ALPHA_CUTOFF) && score <= alpha) &&
              !((stored->metadata.type & BETA_CUTOFF) && score >=beta)) {
+            generate_moves(&out1, board);
             score = board_score(board, who, &out1, alpha, beta);
             if (who) score = -score;
         }
     } else {
+        generate_moves(&out1, board);
         score = board_score(board, who, &out1, alpha, beta);
         if (who) score = -score;
     }
@@ -367,7 +368,7 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     // Even if we can't return the score due to lack of depth,
     // the stored move is probably good, so we can improve the pruning
     tablemove.piece = -1;
-    int res = ttable_search(board, &out1, depth, &best, &tablemove, &alpha, beta);
+    int res = ttable_search(board, depth, &best, &tablemove, &alpha, beta);
     if (res == 0) {
         return alpha;
     }
@@ -546,7 +547,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // and if so, return the score if possible.
     // Even if we can't return the score due to lack of depth,
     // the stored move is probably good, so we can improve the pruning
-    int res = ttable_search(board, &out, depth, best, &tablemove, &alpha, beta);
+    int res = ttable_search(board, depth, best, &tablemove, &alpha, beta);
     if (res == 0) {
         ply--;
         return alpha;
@@ -828,7 +829,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
                     print_pv(board, d/10);
                     printf("\n");
                 }
-                if (!infinite && s > CHECKMATE - 1000 || s < -CHECKMATE + 1000) {
+                if (!infinite && is_checkmate(s)) {
                     break;
                 }
             }

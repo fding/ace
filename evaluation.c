@@ -114,7 +114,7 @@ int pawn_shield_table[100] = {
     15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
     15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
     15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+    15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
 };
 
 int pawn_storm_table[100] = {
@@ -127,7 +127,7 @@ int pawn_storm_table[100] = {
     13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
     13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
     13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
-    13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
+    13, 13, 13, 13, 13, 13, 13, 13, 13,
 };
 
 #define BLACK_CENTRAL_SQUARES 0x0000281428140000ull
@@ -226,6 +226,13 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
     blackmaterial = material_for_player(board, 1);
     score = whitematerial - blackmaterial;
 
+    // Positional scores don't have THAT huge of an effect, so if the situation is already hopeless, give up
+    if (score + 300 < alpha) {
+        return score;
+    }
+    if (score > beta + 300)
+        return score;
+
     uint64_t pawns[2], bishops[2], rooks[2], queens[2],
              minors[2], majors[2], pieces[2], kings[2], outposts[2], holes[2];
 
@@ -244,21 +251,6 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
     majors[1] = P2BM(board, BLACKROOK) | P2BM(board, BLACKQUEEN);
     kings[0] = P2BM(board, WHITEKING);
     kings[1] = P2BM(board, BLACKKING);
-
-    int nminors[2], nmajors[2], endgame;
-
-    nmajors[0] = popcnt(majors[0]);
-    nminors[0] = popcnt(minors[0]);
-    nmajors[1] = popcnt(majors[1]);
-    nminors[1] = popcnt(minors[1]);
-
-
-    // Positional scores don't have THAT huge of an effect, so if the situation is already hopeless, give up
-    if (score + 300 < alpha) {
-        return score;
-    }
-    if (score > beta + 300)
-        return score;
 
 
     uint64_t pawn_attacks[2];
@@ -475,9 +467,9 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
         mask = (AFILE << file);
         if (file != 0)
-            mask |= (AFILE << file - 1);
+            mask |= AFILE << (file - 1);
         if (file != 7)
-            mask |= (AFILE << file + 1);
+            mask |= AFILE << (file + 1);
         // open files are bad news for the king
         subscore -= 2 * (3 - popcnt((pawns[w] | pawns[1-w]) & mask));
         subscore -= 2 * (3 - popcnt((pawns[1-w]) & mask));
@@ -906,7 +898,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     else if (whitematerial < blackmaterial)
         winning_side = -1;
 
-
     // Encourage the winning side to move kings closer together
     score += winning_side * distance_to_score[dist(wkingsquare, bkingsquare)];
 
@@ -916,34 +907,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
 
     score += king_table_endgame[56 - wkingsquare + file + file];
     score -= king_table_endgame[bkingsquare];
-
-    /*
-    uint64_t king_movements;
-    king_movements = kings[0] | attack_set_king(wkingsquare, pieces[0], pieces[1]);
-    count = popcnt(king_movements & (~attacks[1]));
-    if (who == 0 && mvs->check) {
-        if (count <= 4) score -= (4 - count) * 60;
-        if (count == 0) score -= 100;
-        score -= 20;
-    } else if (count <= 2 && (king_movements & (~attacks[1]))) {
-        score -= (3 - count) *30;
-    } else if (count == 0) score -= 20;
-
-    file = bkingsquare & 0x7;
-
-    king_movements = kings[1] | attack_set_king(bkingsquare, pieces[1], pieces[0]);
-    count = popcnt(king_movements & (~attacks[0]));
-    if (who == 1 && mvs->check) {
-        if (count <= 4) score += (4 - count) * 60;
-        if (count == 0) score += 100;
-        score += 20;
-    } else if (count <= 2 && (king_movements & (~attacks[0]))) {
-        score += (3 - count) *30;
-    } else if (count == 0) score += 20;
-
-    // the side with more options is better
-    score += (popcnt(attacks[0]) - popcnt(attacks[1])) * 8;
-    */
 
     return score;
 }

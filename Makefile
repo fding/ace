@@ -9,17 +9,18 @@ generate_magic: generate_magic.c
 magic.c: generate_magic
 	./generate_magic > magic.c
 
-libace.a: board.c engine.c search.c util.c evaluation.c magic.c moves.c timer.c pawns.c
+libace.a: board.c parse.c engine.c search.c util.c evaluation.c magic.c moves.c timer.c pawns.c
 	$(CC) $(CFLAGS) -o magic.o -c magic.c
 	$(CC) $(CFLAGS) -o moves.o -c moves.c
 	$(CC) $(CFLAGS) -o pawns.o -c pawns.c
+	$(CC) $(CFLAGS) -o parse.o -c parse.c
 	$(CC) $(CFLAGS) -o board.o -c board.c
 	$(CC) $(CFLAGS) -o util.o -c util.c
 	$(CC) $(CFLAGS) -o engine.o -c engine.c
 	$(CC) $(CFLAGS) -o search.o -c search.c
 	$(CC) $(CFLAGS) -o evaluation.o -c evaluation.c
 	$(CC) $(CFLAGS) -o timer.o -c timer.c
-	$(CC) $(CFLAGS) -flto -r -o ace.o magic.o moves.o board.o util.o engine.o search.o evaluation.o pawns.o
+	$(CC) $(CFLAGS) -flto -r -o ace.o magic.o moves.o parse.o board.o util.o engine.o search.o evaluation.o pawns.o
 	ar rc libace.a ace.o timer.o
 
 clean:
