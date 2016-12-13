@@ -1464,7 +1464,7 @@ FNULL = open(os.devnull, 'w')
 
 for tname, tcases in [TACTICS, POSITIONAL_UNDERMINING,
                        POSITIONAL_OPEN,
-                      #POSITIONAL_OUTPOSTS, POSITIONAL_SQUARE,
+                      POSITIONAL_OUTPOSTS, POSITIONAL_SQUARE,
                      POSITIONAL_BISHOP_VS_KNIGHT, POSITIONAL_RECAPTURE, POSITIONAL_SIMPLIFICATION,
                      POSITIONAL_QSIDE_STORM, POSITIONAL_KSIDE_STORM, POSITIONAL_KING, POSITIONAL_CENTER,
                       POSITIONAL_CENTRAL_PAWN, POSITIONAL_RANK7, POSITIONAL_BADEXCHANGES
@@ -1485,7 +1485,7 @@ for tname, tcases in [TACTICS, POSITIONAL_UNDERMINING,
                 white = 'c'
             else:
                 black = 'c'
-            output = subprocess.check_output(["./chess", "--white", white, "--black", black, "--depth", "7", "--starting", fen], stderr=FNULL, stdin=f)
+            output = subprocess.check_output(["./chess", "--white", white, "--black", black, "--depth", "10", "--starting", fen], stderr=FNULL, stdin=f)
             if output.strip() in move:
                 print 'Selected best move for "%s"' % fen
                 score += 1

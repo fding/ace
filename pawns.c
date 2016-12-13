@@ -14,7 +14,7 @@ int pawn_table[64] = {
     800, 800, 800, 800, 800, 800, 800, 800,
     -6, 7, -4, -2, -2, -4, 7, -6,
     -7, -6, -3, -1, -1, -3, -6, -7,
-    -7, 0, 2, 11, 11, 2, 0, -7,
+    -7, 0, 5, 13, 13, 5, 0, -7,
     -12, -7, 10, 17, 17, 10, -7, -12,
     -13, -3, 10, 12, 12, 10, -3, -13,
     -10, 0, 2, 4, 4, 2, 0, -10,
@@ -76,7 +76,9 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             file = square & 0x7;
             int loc = (who == 0) ? (56 - square + file + file) : square;
             subscore += pawn_table[loc];
+            DPRINTF("Pawn score on %c%c: %d\n", 'a'+file, '1'+rank, pawn_table[loc]);
             subscore_eg += pawn_table_endgame[loc];
+            DPRINTF("Pawn endgame score on %c%c: %d\n", 'a'+file, '1'+rank, pawn_table[loc]);
 
             uint64_t ahead = (AFILE << file);
             uint64_t behind = (AFILE << file);
@@ -117,17 +119,18 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     sq2ahead = (1ull << (square + 16));
                 }
                 if (file != 0) {
-                    attackers |= (sq1ahead << 1);
-                    blockers |= (sq2ahead << 1);
-                }
-                if (file != 7) {
                     attackers |= (sq1ahead >> 1);
                     blockers |= (sq2ahead >> 1);
+                }
+                if (file != 7) {
+                    attackers |= (sq1ahead << 1);
+                    blockers |= (sq2ahead << 1);
                 }
                 if (!(attackers & board->pieces[1-who][PAWN]) && (blockers & board->pieces[1-who][PAWN])) {
                     penalized = 1;
                     subscore -= 30;
                     subscore_eg -= 30;
+                    DPRINTF("Backward pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank, -30);
                 }
             } else {
                 // Supported pawns are good
@@ -139,14 +142,15 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     sq1behind = (1ull << (square - 8));
                 }
                 if (file != 0) {
-                    supporters |= (sq1behind << 1);
+                    supporters |= (sq1behind >> 1);
                 }
                 if (file != 7) {
-                    supporters |= (sq1behind >> 1);
+                    supporters |= (sq1behind << 1);
                 }
                 if (supporters & board->pieces[who][PAWN]) {
                     subscore += 3;
                     subscore_eg += 3;
+                    DPRINTF("Supported pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank, 3);
                 }
             }
 
@@ -155,6 +159,8 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                 int other = LSBINDEX(ahead & board->pieces[who][PAWN]);
                 subscore -= doubled_pawn_penalty[file] / abs(other/8 - rank);
                 subscore_eg -= doubled_pawn_penalty_endgame[file] / abs(other/8 - rank);
+                DPRINTF("Double pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank,
+                        -doubled_pawn_penalty[file] / abs(other/8 - rank));
             }
 
             // passed pawns are good
@@ -162,10 +168,14 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                 if (who) {
                     subscore += passed_pawn_table[7 - rank];
                     subscore_eg += passed_pawn_table_endgame[7 - rank];
+                    DPRINTF("Passed pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank,
+                            passed_pawn_table[7 - rank]);
                 }
                 else {
                     subscore += passed_pawn_table[rank];
                     subscore_eg += passed_pawn_table_endgame[rank];
+                    DPRINTF("Passed pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank,
+                            passed_pawn_table[rank]);
                 }
                 stored->passed_pawns[who] |= (1ull << square);
             }
@@ -177,6 +187,8 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             if (!penalized && !(mask & board->pieces[who][PAWN])) {
                 subscore -= isolated_pawn_penalty[file];
                 subscore_eg -= isolated_pawn_penalty_endgame[file];
+                DPRINTF("Isolated pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank,
+                        isolated_pawn_penalty[file]);
             }
         }
 

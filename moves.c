@@ -4,10 +4,9 @@
 
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
- * MOVEMENT CODE
+ * Precomputed tables
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
-uint64_t magic_table[107648];
 uint64_t knight_move_table[64] = {
     0x0000000000020400ull, 0x0000000000050800ull, 0x00000000000a1100ull, 0x0000000000142200ull, 0x0000000000284400ull, 0x0000000000508800ull, 0x0000000000a01000ull, 0x0000000000402000ull,
     0x0000000002040004ull, 0x0000000005080008ull, 0x000000000a110011ull, 0x0000000014220022ull, 0x0000000028440044ull, 0x0000000050880088ull, 0x00000000a0100010ull, 0x0000000040200020ull,
@@ -31,11 +30,13 @@ uint64_t king_move_table[64] = {
 };
 
 uint64_t ray_table[8][64] = {{0}};
-
 uint64_t ray_between_table[64][64];
 
+uint64_t magic_table[107648];
 struct magic bishop_magics[64];
 struct magic rook_magics[64];
+
+char castle_priv[64];
 
 uint64_t ray_attacks_positive(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy, int direction) {
     uint64_t ray_mask = ray_table[direction][square];
@@ -55,8 +56,9 @@ uint64_t ray_attacks_negative(int square, uint64_t friendly_occupancy, uint64_t 
         attacks = ray_mask & (-msb ^ msb);
         attacks |= (msb & enemy_occupancy);
     }
-    else
+    else {
         attacks = ray_mask;
+    }
     
     return attacks;
 }
@@ -83,7 +85,6 @@ uint64_t ray_between(int square1, int square2) {
     return ray_between_table[square1][square2];
 }
 
-char castle_priv[64];
 
 void initialize_move_tables() {
     initialize_magics();
@@ -371,7 +372,8 @@ uint64_t attack_set_rook(int square, uint64_t friendly_occupancy, uint64_t enemy
 }
 
 uint64_t attack_set_queen(int square, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
-    return attack_set_rook(square, friendly_occupancy, enemy_occupancy) | attack_set_bishop(square, friendly_occupancy, enemy_occupancy);
+    return attack_set_rook(square, friendly_occupancy, enemy_occupancy) |
+        attack_set_bishop(square, friendly_occupancy, enemy_occupancy);
 }
 
 uint64_t xray_rook_attacks(int square, uint64_t occ, uint64_t blockers) {

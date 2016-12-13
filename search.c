@@ -690,7 +690,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     signal_stop = 0;
     out_of_time = 0;
     int alpha, beta;
-    int d, s;
+    int d = 0, s;
     move_t best, temp;
     clock_t start = clock();
 

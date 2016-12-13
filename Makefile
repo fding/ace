@@ -1,7 +1,17 @@
 CC=clang
-CFLAGS=-L. -O3 -Wall -Wno-char-subscripts -mpopcnt -mlzcnt
+CFLAGS=-L. -Ofast  -Wall -Wno-char-subscripts -mpopcnt -mlzcnt
 
+all: CFLAGS+= -fprofile-instr-use=code.profdata
 all: libace.a chess perft benchmark init ace-uci score
+
+debug: CFLAGS+= -D DEBUG
+debug: score
+
+instrument: CFLAGS+= -fprofile-instr-generate
+instrument: benchmark
+	./benchmark
+	mv default.profraw benchmark.profraw
+	xcrun llvm-profdata merge -output=code.profdata benchmark.profraw
 
 generate_magic: generate_magic.c
 	$(CC) -O3 -o generate_magic generate_magic.c
@@ -9,17 +19,17 @@ generate_magic: generate_magic.c
 magic.c: generate_magic
 	./generate_magic > magic.c
 
-libace.a: board.c parse.c engine.c search.c util.c evaluation.c magic.c moves.c timer.c pawns.c
-	$(CC) $(CFLAGS) -o magic.o -c magic.c
-	$(CC) $(CFLAGS) -o moves.o -c moves.c
-	$(CC) $(CFLAGS) -o pawns.o -c pawns.c
-	$(CC) $(CFLAGS) -o parse.o -c parse.c
-	$(CC) $(CFLAGS) -o board.o -c board.c
-	$(CC) $(CFLAGS) -o util.o -c util.c
-	$(CC) $(CFLAGS) -o engine.o -c engine.c
-	$(CC) $(CFLAGS) -o search.o -c search.c
-	$(CC) $(CFLAGS) -o evaluation.o -c evaluation.c
-	$(CC) $(CFLAGS) -o timer.o -c timer.c
+libace.a: board.c board.h parse.c engine.c search.c search.h util.c util.h evaluation.c magic.c magic.h moves.c moves.h timer.c timer.h pawns.c pawns.h
+	$(CC) $(CFLAGS) -flto -o magic.o -c magic.c
+	$(CC) $(CFLAGS) -flto -o moves.o -c moves.c
+	$(CC) $(CFLAGS) -flto -o pawns.o -c pawns.c
+	$(CC) $(CFLAGS) -flto -o parse.o -c parse.c
+	$(CC) $(CFLAGS) -flto -o board.o -c board.c
+	$(CC) $(CFLAGS) -flto -o util.o -c util.c
+	$(CC) $(CFLAGS) -flto -o engine.o -c engine.c
+	$(CC) $(CFLAGS) -flto -o search.o -c search.c
+	$(CC) $(CFLAGS) -flto -o evaluation.o -c evaluation.c
+	$(CC) $(CFLAGS) -flto -o timer.o -c timer.c
 	$(CC) $(CFLAGS) -flto -r -o ace.o magic.o moves.o parse.o board.o util.o engine.o search.o evaluation.o pawns.o
 	ar rc libace.a ace.o timer.o
 

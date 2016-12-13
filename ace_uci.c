@@ -16,7 +16,8 @@ struct timec {
 
 sem_t available_threads;
 pthread_t search_thread;
-void* launch_search_thread(void * argument) {
+
+void * launch_search_thread(void * argument) {
     struct timec* arg = (struct timec *) argument;
     char buffer[8];
     engine_search(buffer, 0, arg->wtime, arg->btime, arg->winc, arg->binc, arg->moves_to_go);
@@ -25,7 +26,8 @@ void* launch_search_thread(void * argument) {
     sem_post(&available_threads);
     return NULL;
 }
-void* launch_ponder_thread(void * argument) {
+
+void * launch_ponder_thread(void * argument) {
     (void) argument;
     char buffer[8];
     engine_search(buffer, 1, 0, 0, 0, 0, 0);

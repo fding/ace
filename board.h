@@ -186,7 +186,7 @@ struct opening_entry {
 // It holds a set of legal moves, along with other useful properties
 // computed along the way
 struct deltaset {
-    move_t moves[256];
+    move_t moves[228]; // 256
     short nmoves;
     char check;
     side_t who;
