@@ -101,10 +101,6 @@ int main(int argc, char* argv[]) {
             dup2(fdswhite[0], STDIN_FILENO);
             close(fdswhite[0]);
             close(fdswhite[1]);
-            // Discard standard error for black
-            dup2(fdsblackerr[1], STDERR_FILENO);
-            close(fdsblackerr[0]);
-            close(fdsblackerr[1]);
             execl(blackprogram, blackprogram, "--white=human", "--black=computer", "--starting", position, NULL);
         }
 

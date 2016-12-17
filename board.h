@@ -34,7 +34,7 @@ extern uint64_t square_hash_codes[64][12];
 extern uint64_t castling_hash_codes[4];
 extern uint64_t enpassant_hash_codes[8];
 extern uint64_t side_hash_code;
-extern union transposition* ttable;
+extern struct ttable_entry* ttable;
 
 
 extern int hashmapsize;
@@ -169,9 +169,14 @@ union transposition {
         // 8 byte alignment
         uint32_t hash;
         char type;
-        char depth;
+        uint8_t depth;
         int16_t age;
     } metadata;
+};
+
+struct ttable_entry {
+    union transposition slot1;
+    union transposition slot2;
 };
 
 struct opening_entry {

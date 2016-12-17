@@ -33,6 +33,9 @@ static struct option long_options[] = {
 };
 
 int main(int argc, char* argv[]) {
+    setbuffer(stdout, NULL, 0);
+    setbuffer(stdin, NULL, 0);
+    setbuffer(stderr, NULL, 0);
     setlocale(LC_ALL, "en_US.UTF-8");
     char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     int c;

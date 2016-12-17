@@ -43,6 +43,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
     struct pawn_structure * stored;
     stored = &pawn_hashmap[board->pawn_hash & 0x1fff];
     if (stored->pawn_hash == board->pawn_hash) {
+        DPRINTF("Pawn hash collision: %lx\n", board->pawn_hash);
         return stored;
     }
 
@@ -78,7 +79,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             subscore += pawn_table[loc];
             DPRINTF("Pawn score on %c%c: %d\n", 'a'+file, '1'+rank, pawn_table[loc]);
             subscore_eg += pawn_table_endgame[loc];
-            DPRINTF("Pawn endgame score on %c%c: %d\n", 'a'+file, '1'+rank, pawn_table[loc]);
+            DPRINTF("Pawn endgame score on %c%c: %d\n", 'a'+file, '1'+rank, pawn_table_endgame[loc]);
 
             uint64_t ahead = (AFILE << file);
             uint64_t behind = (AFILE << file);
@@ -131,6 +132,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     subscore -= 30;
                     subscore_eg -= 30;
                     DPRINTF("Backward pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank, -30);
+                    DPRINTF("Backward pawn eg penalty on %c%c: %d\n", 'a'+file, '1'+rank, -30);
                 }
             } else {
                 // Supported pawns are good
@@ -151,6 +153,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     subscore += 3;
                     subscore_eg += 3;
                     DPRINTF("Supported pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank, 3);
+                    DPRINTF("Supported pawn eg bonus on %c%c: %d\n", 'a'+file, '1'+rank, 3);
                 }
             }
 
@@ -161,6 +164,8 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                 subscore_eg -= doubled_pawn_penalty_endgame[file] / abs(other/8 - rank);
                 DPRINTF("Double pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank,
                         -doubled_pawn_penalty[file] / abs(other/8 - rank));
+                DPRINTF("Double pawn eg penalty on %c%c: %d\n", 'a'+file, '1'+rank,
+                        -doubled_pawn_penalty_endgame[file] / abs(other/8 - rank));
             }
 
             // passed pawns are good
@@ -170,12 +175,16 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     subscore_eg += passed_pawn_table_endgame[7 - rank];
                     DPRINTF("Passed pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank,
                             passed_pawn_table[7 - rank]);
+                    DPRINTF("Passed eg pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank,
+                            passed_pawn_table_endgame[7 - rank]);
                 }
                 else {
                     subscore += passed_pawn_table[rank];
                     subscore_eg += passed_pawn_table_endgame[rank];
                     DPRINTF("Passed pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank,
                             passed_pawn_table[rank]);
+                    DPRINTF("Passed eg pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank,
+                            passed_pawn_table_endgame[rank]);
                 }
                 stored->passed_pawns[who] |= (1ull << square);
             }
@@ -188,7 +197,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                 subscore -= isolated_pawn_penalty[file];
                 subscore_eg -= isolated_pawn_penalty_endgame[file];
                 DPRINTF("Isolated pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank,
-                        isolated_pawn_penalty[file]);
+                        -isolated_pawn_penalty[file]);
             }
         }
 

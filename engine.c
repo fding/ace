@@ -12,9 +12,11 @@
 
 const wchar_t pretty_piece_names[] = L"\x265f\x265c\x265e\x265d\x265b\x265a\x2659\x2656\x2658\x2657\x2655\x2654";
 
-union transposition* ttable;
+struct ttable_entry* ttable;
 struct opening_entry* opening_table;
 uint64_t ttable_size = 0;
+
+void initialize_endgame_tables();
 
 struct {
     struct board board;
@@ -151,10 +153,11 @@ void engine_init(int flags) {
         initialized = 1;
         initialize_move_tables();
         initialize_hash_codes();
-        if (posix_memalign((void **) &ttable, 64, hashmapsize * sizeof(union transposition))) {
+        initialize_endgame_tables();
+        if (posix_memalign((void **) &ttable, 64, hashmapsize * sizeof(struct ttable_entry))) {
             exit(1);
         }
-        memset(ttable, 0, hashmapsize * sizeof(union transposition));
+        memset(ttable, 0, hashmapsize * sizeof(struct ttable_entry));
         if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
             exit(1);
         if (flags & FLAGS_USE_OPENING_TABLE)
@@ -166,10 +169,10 @@ void engine_init(int flags) {
 int engine_reset_hashmap(int hashsize) {
     hashmapsize = MSB(hashsize);
     free(ttable);
-    if (posix_memalign((void **) &ttable, 64, hashmapsize * sizeof(union transposition))) {
+    if (posix_memalign((void **) &ttable, 64, hashmapsize * sizeof(struct ttable_entry))) {
         return 1;
     }
-    memset(ttable, 0, hashmapsize * sizeof(union transposition));
+    memset(ttable, 0, hashmapsize * sizeof(struct ttable_entry));
     return 0;
 }
 
@@ -188,7 +191,7 @@ char* engine_new_game_from_position(char* position) {
 
 void engine_clear_state() {
     memset(position_count_table, 0, sizeof(position_count_table));
-    memset(ttable, 0, hashmapsize * sizeof(union transposition));
+    memset(ttable, 0, hashmapsize * sizeof(struct ttable_entry));
     memset(history, 0, 2 * 64 * 64 * sizeof(int));
 }
 
@@ -326,7 +329,8 @@ int engine_move(char * buffer) {
         algebraic_to_move(engine_get_board(), buffer, &move);
     else
         calgebraic_to_move(engine_get_board(), buffer, &move);
-    return engine_move_internal(move);
+    int ret = engine_move_internal(move);
+    return ret;
 }
 
 void engine_print() {
