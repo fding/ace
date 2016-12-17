@@ -31,6 +31,7 @@ uint64_t king_move_table[64] = {
 
 uint64_t ray_table[8][64] = {{0}};
 uint64_t ray_between_table[64][64];
+uint64_t line_between_table[64][64];
 
 uint64_t magic_table[107648];
 struct magic bishop_magics[64];
@@ -85,6 +86,9 @@ uint64_t ray_between(int square1, int square2) {
     return ray_between_table[square1][square2];
 }
 
+uint64_t line_between(int square1, int square2) {
+    return line_between_table[square1][square2];
+}
 
 void initialize_move_tables() {
     initialize_magics();
@@ -116,24 +120,37 @@ void initialize_move_tables() {
             int sq1 = 8 * i + j;
             uint64_t ray = 1ull << sq1;
             ray_between_table[sq1][sq1] = ray;
+            line_between_table[sq1][sq1] = ray;
             for (k = i + 1; k < 8; k++) {
                 ray |= (1ull << (k * 8 + j));
                 ray_between_table[sq1][8*k+j] = ray;
+            }
+            for (k = i + 1; k < 8; k++) {
+                line_between_table[sq1][8*k+j] = ray ^ ray_between_table[sq1][8*k+j];
             }
             ray = 1ull << sq1;
             for (k = j + 1; k < 8; k++) {
                 ray |= (1ull << (i * 8 + k));
                 ray_between_table[sq1][i*8+k] = ray;
             }
+            for (k = j + 1; k < 8; k++) {
+                line_between_table[sq1][i*8+k] = ray ^ ray_between_table[sq1][i*8+k];
+            }
             ray = 1ull << sq1;
             for (k = i - 1; k >= 0; k--) {
                 ray |= (1ull << (k * 8 + j));
                 ray_between_table[sq1][8*k+j] = ray;
             }
+            for (k = i - 1; k >= 0; k--) {
+                line_between_table[sq1][8*k+j] = ray ^ ray_between_table[sq1][8*k+j];
+            }
             ray = 1ull << sq1;
             for (k = j - 1; k >= 0; k--) {
                 ray |= (1ull << (i * 8 + k));
                 ray_between_table[sq1][i*8+k] = ray;
+            }
+            for (k = j - 1; k >= 0; k--) {
+                line_between_table[sq1][i*8+k] = ray ^ ray_between_table[sq1][i*8+k];
             }
 
             ray = 1ull << sq1;
@@ -141,22 +158,33 @@ void initialize_move_tables() {
                 ray |= 1ull << (k * 8 + l);
                 ray_between_table[sq1][k * 8 + l] = ray;
             }
+            for (k = i + 1, l = j + 1; k < 8 && l < 8; k++ && l++) {
+                line_between_table[sq1][k * 8 + l] = ray ^ ray_between_table[sq1][k * 8 + l];
+            }
             ray = 1ull << sq1;
             for (k = i + 1, l = j - 1; k < 8 && l >=0; k++ && l--) {
                 ray |= 1ull << (k * 8 + l);
                 ray_between_table[sq1][k * 8 + l] = ray;
+            }
+            for (k = i + 1, l = j - 1; k < 8 && l >=0; k++ && l--) {
+                line_between_table[sq1][k * 8 + l] = ray ^ ray_between_table[sq1][k * 8 + l];
             }
             ray = 1ull << sq1;
             for (k = i - 1, l = j + 1; k >=0 && l < 8; k-- && l++) {
                 ray |= 1ull << (k * 8 + l);
                 ray_between_table[sq1][k * 8 + l] = ray;
             }
+            for (k = i - 1, l = j + 1; k >=0 && l < 8; k-- && l++) {
+                line_between_table[sq1][k * 8 + l] = ray ^ ray_between_table[sq1][k * 8 + l];
+            }
             ray = 1ull << sq1;
             for (k = i - 1, l = j - 1; k >=0 && l >=0; k-- && l--) {
                 ray |= 1ull << (k * 8 + l);
                 ray_between_table[sq1][k * 8 + l] = ray;
             }
-
+            for (k = i - 1, l = j - 1; k >=0 && l >=0; k-- && l--) {
+                line_between_table[sq1][k * 8 + l] = ray ^ ray_between_table[sq1][k * 8 + l];
+            }
         }
     }
 

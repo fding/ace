@@ -59,13 +59,14 @@ typedef int16_t piece_t;
 struct board {
     uint64_t pieces[2][6];
     uint64_t enpassant;
+    uint64_t hash;
+    uint64_t pawn_hash;
     short nmoves;
     char nmovesnocapture;
     char cancastle;
-    uint64_t hash;
-    uint64_t pawn_hash;
     char castled;
     side_t who;
+    uint8_t kingsq[2];
 };
 
 /* Data structure for move.

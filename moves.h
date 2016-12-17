@@ -44,6 +44,7 @@ uint64_t xray_rook_attacks(int square, uint64_t occ, uint64_t blockers);
 uint64_t xray_bishop_attacks(int square, uint64_t occ, uint64_t blockers);
 
 uint64_t ray_between(int square1, int square2);
+uint64_t line_between(int square1, int square2);
 
 
 #endif

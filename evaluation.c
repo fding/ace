@@ -319,8 +319,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
         }
 
         bmloop(P2BM(board, 6 * w + KNIGHT), square, temp) {
-            file = square & 0x7;
-            int loc = (w == 0) ? (56 - square + file + file) : square;
+            int loc = (w == 0) ? 64 - square : square;
             int oldsubscore = subscore;
             subscore += knight_table[loc];
             SQPRINTF("Sided knight position score for %c%c: %d\n", square, knight_table[loc]);
@@ -366,8 +365,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
         count = 0;
         bmloop(P2BM(board, 6 * w + BISHOP), square, temp) {
-            file = square & 0x7;
-            int loc = (w == 0) ? (56 - square + file + file) : square;
+            int loc = (w == 0) ? 64 - square : square;
             int oldsubscore = subscore;
             subscore += bishop_table[loc];
             SQPRINTF("Sided bishop score for %c%c: %d\n", square, bishop_table[loc]);
@@ -438,7 +436,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
         bmloop(P2BM(board, 6 * w + ROOK), square, temp) {
             file = square & 0x7;
             rank = square / 8;
-            int loc = (w == 0) ? (56 - square + file + file) : square;
+            int loc = (w == 0) ? 64 - square : square;
             int oldsubscore = subscore;
             subscore += rook_table[loc];
             SQPRINTF("Sided rook for %c%c: %d\n", square, rook_table[loc]);
@@ -503,7 +501,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
         bmloop(P2BM(board, 6 * w + QUEEN), square, temp) {
             file = square & 0x7;
-            int loc = (w == 0) ? (56 - square + file + file) : square;
+            int loc = (w == 0) ? 64 - square : square;
             int oldsubscore = subscore;
             subscore += queen_table[loc];
             SQPRINTF("Queen score for %c%c: %d\n", square, queen_table[loc]);
@@ -556,14 +554,14 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
             SQPRINTF("Total value of queen on %c%c: %d\n", square, subscore - oldsubscore);
         }
 
-        square = LSBINDEX(kings[w]);
+        square = board->kingsq[w];
         file = square & 0x7;
-        int loc = (w == 0) ? (56 - square + file + file) : square;
+        int loc = (w == 0) ? 64 - square : square;
         subscore += king_table[loc];
         SQPRINTF("King score for %c%c: %d\n", square, king_table[loc]);
 
         uint64_t opponent_king_mask;
-        int opponent_king_file = LSBINDEX(kings[1 - w]) % 8;
+        int opponent_king_file = board->kingsq[1 - w] % 8;
         if (opponent_king_file <= 2)
             opponent_king_mask = AFILE | (AFILE << 1) | (AFILE << 2);
         if (opponent_king_file >= 5)
@@ -799,8 +797,8 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     kings[1] = P2BM(board, BLACKKING);
 
     int wkingsquare, bkingsquare;
-    wkingsquare = LSBINDEX(kings[0]);
-    bkingsquare = LSBINDEX(kings[1]);
+    wkingsquare = board->kingsq[0];
+    bkingsquare = board->kingsq[1];
 
     pieces[0] = pawns[0] | minors[0] | majors[0] | kings[0];
     pieces[1] = pawns[1] | minors[1] | majors[1] | kings[1];

@@ -145,6 +145,7 @@ static void print_pv(struct board* board, int depth) {
 
 // Update killers for given ply
 static void update_killer(int ply, move_t* m) {
+    // TODO: enforce not equal?
     if (!move_equal(*m, killer[ply].m1)) {
         move_copy(&killer[ply].m2, &killer[ply].m1);
         move_copy(&killer[ply].m1, m);

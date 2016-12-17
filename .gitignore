@@ -3,3 +3,13 @@
 *.dSYM/
 *.a
 *.swp
+ace-uci
+chess
+benchmark
+score
+playself
+init
+generate_magic
+*.profraw
+*.acebase
+*.profdata

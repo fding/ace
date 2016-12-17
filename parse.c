@@ -121,6 +121,9 @@ char* board_init_from_fen(struct board* out, char* position) {
         position++;
     }
 
+    out->kingsq[0] = LSBINDEX(out->pieces[0][KING]);
+    out->kingsq[1] = LSBINDEX(out->pieces[1][KING]);
+
     if (*position == 0) return NULL;
 
     if (*(++position) != ' ') return NULL;

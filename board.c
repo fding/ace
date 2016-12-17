@@ -173,6 +173,10 @@ int apply_move(struct board* board, struct delta* move) {
         }
     }
 
+    if (move->piece == KING) {
+        board->kingsq[who] = move->square2;
+    }
+
     // If capture, reset nmovesnocapture clock
     if (move->captured != -1) {
         if (move->misc & 0x40) {
@@ -264,6 +268,11 @@ int reverse_move(struct board* board, move_t* move) {
             board->pawn_hash ^= square_hash_codes[move->square2][6 * who + move->promotion];
         }
     }
+
+    if (move->piece == KING) {
+        board->kingsq[who] = move->square1;
+    }
+
     // If capture
     if (move->captured != -1) {
         if (move->misc & 0x40) {
@@ -427,7 +436,7 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
     enemy_occupancy = board_occupancy(board, 1 - who);
 
     uint64_t king = board->pieces[who][KING];
-    int kingsquare = LSBINDEX(king);
+    int kingsquare = board->kingsq[who];
 
     // Find pieces pinned to the king
     uint64_t pinned = 0;
@@ -497,10 +506,8 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
     // Bishops
     bmloop(board->pieces[who][BISHOP], square, temp) {
         if ((1ull << square) & pinned) {
-            bmloop(pinners, pinsq, pintemp) {
-                pinmask = ray_between(kingsquare, pinsq);
-                if (pinmask & (1ull << square)) break;
-            }
+            pinmask = ray_between(kingsquare,
+                    LSBINDEX(line_between(kingsquare, square) & pinners));
             attack = attack_set_bishop(square, friendly_occupancy, enemy_occupancy) & mask & pinmask;
         } else {
             attack = attack_set_bishop(square, friendly_occupancy, enemy_occupancy) & mask;
@@ -512,10 +519,8 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
     // Pawns
     bmloop(board->pieces[who][PAWN], square, temp) {
         if ((1ull << square) & pinned) {
-            bmloop(pinners, pinsq, pintemp) {
-                pinmask = ray_between(kingsquare, pinsq);
-                if (pinmask & (1ull << square)) break;
-            }
+            pinmask = ray_between(kingsquare,
+                    LSBINDEX(line_between(kingsquare, square) & pinners));
             attack = attack_set_pawn[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pinmask;
         } else {
             attack = attack_set_pawn[who](square, board->enpassant, friendly_occupancy, enemy_occupancy);
@@ -537,10 +542,8 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
     // Queens
     bmloop(board->pieces[who][QUEEN], square, temp) {
         if ((1ull << square) & pinned) {
-            bmloop(pinners, pinsq, pintemp) {
-                pinmask = ray_between(kingsquare, pinsq);
-                if (pinmask & (1ull << square)) break;
-            }
+            pinmask = ray_between(kingsquare,
+                    LSBINDEX(line_between(kingsquare, square) & pinners));
             attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask & pinmask;
         } else {
             attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask;
@@ -552,10 +555,8 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
     // Rooks
     bmloop(board->pieces[who][ROOK], square, temp) {
         if ((1ull << square) & pinned) {
-            bmloop(pinners, pinsq, pintemp) {
-                pinmask = ray_between(kingsquare, pinsq);
-                if (pinmask & (1ull << square)) break;
-            }
+            pinmask = ray_between(kingsquare,
+                    LSBINDEX(line_between(kingsquare, square) & pinners));
             attack = attack_set_rook(square, friendly_occupancy, enemy_occupancy) & mask & pinmask;
         } else {
             attack = attack_set_rook(square, friendly_occupancy, enemy_occupancy) & mask;
