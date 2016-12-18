@@ -7,7 +7,7 @@ extern int rook_table[64];
 extern int queen_table[64];
 extern int king_table[64];
 extern int king_table_endgame[64];
-extern int king_attacker_table[64];
+extern int king_attacker_table[100];
 extern int attack_count_table[40];
 extern int attack_count_table_bishop[20];
 extern int attack_count_table_knight[9];

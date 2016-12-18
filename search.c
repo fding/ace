@@ -367,12 +367,6 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     generate_captures(&out, board);
     nmoves = out.nmoves;
 
-    if (nmoves == 0) {
-        score = board_score(board, who, &out, alpha, beta);
-        if (who) score = -score;
-        return score;
-    }
-
     // Check if we are out of time. If so, abort
     // Since clock() is costly, don't do this all the time!
     if (branches % 131072 == 0) {

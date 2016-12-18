@@ -23,6 +23,13 @@ static int dist(int sq1, int sq2) {
     else return dh;
 }
 
+static int material_for_player_endgame(struct board* board, side_t who) {
+    return 135 * popcnt(board->pieces[who][PAWN]) +
+        275 * popcnt(board->pieces[who][KNIGHT]) +
+        300 * popcnt(board->pieces[who][BISHOP]) +
+        550 * popcnt(board->pieces[who][ROOK]) +
+        900 * popcnt(board->pieces[who][QUEEN]);
+}
 
 // Table of how easy certain endgames are to win
 // This is a hash table, computed via:
@@ -49,13 +56,13 @@ static int material_hash(struct board* board) {
 }
 
 #define ENDGAME_TABLE_JUNK -1
+#define PCHECKMATE 4096
 void initialize_endgame_tables() {
     kpkGenerate();
     // -1 is our junk value
     for (int i = 0; i < 6561; i++) {
         insufficient_material_table[i] = ENDGAME_TABLE_JUNK;
     }
-#define PCHECKMATE 4096
     insufficient_material_table[material_hash_wp(/* Queen */ 0, 0, /* Rook */ 0, 0, /* Bishop */ 0, 0, /* Knight */ 0, 0)] = 0;
     /* Absolute draws */
     // KB vs K
@@ -158,12 +165,11 @@ void initialize_endgame_tables() {
 
 // Endgame behaves very differently, so we have a separate scoring function
 int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs) {
-    int rank = 0, file = 0;
+    int file = 0;
 
     int score = 0;
     uint64_t temp;
     int square, count;
-
 
 #define EG_NONE 0
 #define EG_KPKP 1
@@ -186,16 +192,7 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
     pieces[0] = pawns[0] | minors[0] | majors[0] | kings[0];
     pieces[1] = pawns[1] | minors[1] | majors[1] | kings[1];
 
-    uint64_t attacks[2], undefended[2];
-    attacks[0] = attacked_squares(board, 0, pieces[0] | pieces[1]);
-    attacks[1] = attacked_squares(board, 1, pieces[0] | pieces[1]);
-
-    undefended[0] = attacks[1] ^ (attacks[0] & attacks[1]);
-    undefended[1] = attacks[0] ^ (attacks[0] & attacks[1]);
-
     // Draws from insufficient material
-
-    uint64_t mask;
 
 #define ENDGAME_KNOWLEDGE
 #ifdef ENDGAME_KNOWLEDGE
@@ -206,16 +203,6 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
 
     // No pawns
     if (popcnt(pawns[0]) == 0 && popcnt(pawns[1]) == 0) {
-        /*
-        int nknights[2], nbishops[2], nrooks[2], nqueens[2];
-        for (int i = 0; i < 2; i++) {
-            nknights[i] = popcnt(board->pieces[i][KNIGHT]);
-            nbishops[i] = popcnt(board->pieces[i][BISHOP]);
-            nrooks[i] = popcnt(board->pieces[i][ROOK]);
-            nqueens[i] = popcnt(board->pieces[i][QUEEN]);
-        }
-        */
-
         int hval = material_hash(board);
         if (hval < 6561) {
             int val = insufficient_material_table[hval];
@@ -227,22 +214,6 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
             }
             DPRINTF("score=%d\n", score);
         }
-        /*
-        if (nqueens[0] > 0 && nqueens[1] == 0 && nrooks[1] == 0)
-            score += 3000;
-        else if (nqueens[1] > 0 && nqueens[0] == 0 && nrooks[0] == 0)
-            score -= 3000;
-        else if (nqueens[0] > 0 && nqueens[1] == 0 && nrooks[1] == 1 && nbishops[1] == 0 && nknights[1] == 0)
-            score += 1000;
-        else if (nqueens[1] > 0 && nqueens[0] == 0 && nrooks[0] == 1 && nbishops[0] == 0 && nknights[0] == 0)
-            score -= 1000;
-        // KNNK is a draw
-        else if (nqueens[0] == 0 && nqueens[1] == 0 && nrooks[0] == 0 && nrooks[1] == 0 && nbishops[0] == 0 && nbishops[1] == 0)
-            return 0;
-        // KBKB is a draw
-        else if (nqueens[0] == 0 && nqueens[1] == 0 && nrooks[0] == 0 && nrooks[1] == 0 && nbishops[0] <= 1 && nbishops[1] <= 1 && nknights[0] == 0 && nknights[1] == 0)
-            return 0;
-        */
     }
 
     // Pawn + king vs king
@@ -376,8 +347,7 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
     }
 
     bmloop(P2BM(board, WHITEKNIGHT), square, temp) {
-        file = square & 0x7;
-        score += knight_table[56 - square + file + file];
+        score += knight_table[63 - square];
     }
     bmloop(P2BM(board, BLACKKNIGHT), square, temp) {
         score -= knight_table[square];
@@ -385,8 +355,7 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
 
     count = 0;
     bmloop(P2BM(board, WHITEBISHOP), square, temp) {
-        file = square & 0x7;
-        score += bishop_table[56 - square + file + file];
+        score += bishop_table[63 - square];
         count += 1;
     }
     // Bishop pairs are very valuable
@@ -437,9 +406,7 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
 
     // King safety
 
-    file = wkingsquare & 0x7;
-
-    score += king_table_endgame[56 - wkingsquare + file + file];
+    score += king_table_endgame[63 - wkingsquare];
     score -= king_table_endgame[bkingsquare];
 
     return score;

@@ -1,3 +1,4 @@
+#include "evaluation_parameters.h"
 
 // All tables are from white's perspective
 // We give a bonus for all pieces the closer they move to the opposite side

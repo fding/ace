@@ -49,14 +49,6 @@ int material_for_player(struct board* board, side_t who) {
         880 * popcnt(board->pieces[who][QUEEN]);
 }
 
-int material_for_player_endgame(struct board* board, side_t who) {
-    return 135 * popcnt(board->pieces[who][PAWN]) +
-        275 * popcnt(board->pieces[who][KNIGHT]) +
-        300 * popcnt(board->pieces[who][BISHOP]) +
-        550 * popcnt(board->pieces[who][ROOK]) +
-        900 * popcnt(board->pieces[who][QUEEN]);
-}
-
 /* Scoring the board:
  * We score the board in units of centipawns, taking the following
  * into consideration:
