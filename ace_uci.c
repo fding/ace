@@ -16,6 +16,7 @@ struct timec {
 
 sem_t available_threads;
 pthread_t search_thread;
+int board_initialized = 0;
 
 void * launch_search_thread(void * argument) {
     struct timec* arg = (struct timec *) argument;
@@ -41,6 +42,7 @@ int main() {
     setbuf(stdout, NULL);
     setbuf(stdin, NULL);
     char *buffer = malloc(4046);
+    assert(buffer);
     sem_init(&available_threads, 0, 1);
     size_t n;
     memset(buffer, 0, 4096);
@@ -52,7 +54,10 @@ int main() {
         fprintf(f, "%s", buffer);
         fflush(f);
         n = strlen(buffer);
-        if (n > 4096) exit(1);
+        if (n > 4096) {
+            fprintf(stderr, "Line too long\n");
+            exit(1);
+        }
         buffer[n - 1] = 0;
         char * token;
         token = strtok(buffer, " ");
@@ -69,6 +74,14 @@ int main() {
             }
             else if (strcmp(token, "debug") == 0) {
                 // Not implemented
+                token = strtok(NULL, " ");
+                if (token && strcmp(token, "on") == 0) {
+                    engine_set_param(ACE_PARAM_DEBUG, 1);
+                    if (debug_mode)
+                        printf("info string debug mode on\n");
+                } else {
+                    engine_set_param(ACE_PARAM_DEBUG, 0);
+                }
                 break;
             }
             else if (strcmp(token, "isready") == 0) {
@@ -101,6 +114,7 @@ int main() {
             else if (strcmp(token, "ucinewgame") == 0) {
                 engine_clear_state();
                 engine_new_game();
+                board_initialized = 1;
                 break;
             }
             else if (strcmp(token, "position") == 0) {
@@ -118,9 +132,15 @@ int main() {
                 } else {
                     pos = token + 4;
                     while (*pos && *pos == ' ') pos++;
+                    char * old_fen = pos;
                     if (!(*pos)) break;
                     pos = engine_new_game_from_position(pos);
+                    if (!pos) {
+                        printf("info string Invalid board fen: %s\n", old_fen);
+                        break;
+                    }
                 }
+                board_initialized = 1;
                 token = strtok(pos, " ");
                 if (!token) break;
                 if (strcmp(token, "moves") != 0) break;
@@ -131,6 +151,10 @@ int main() {
                 break;
             }
             else if (strcmp(token, "go") == 0) {
+                if (!board_initialized) {
+                    printf("info string board not initialized\n");
+                    break;
+                }
                 token = strtok(NULL, " ");
                 if (token != NULL && strcmp(token, "ponder") == 0) {
                     engine_stop_search();
@@ -196,7 +220,10 @@ int main() {
                 break;
             }
             else if (strcmp(token, "stop") == 0) {
-                engine_stop_search();
+                if (board_initialized)
+                    engine_stop_search();
+                else
+                    printf("info string board not initialized\n");
                 break;
             }
             else if (strcmp(token, "ponderhit") == 0) {
@@ -205,6 +232,13 @@ int main() {
             else if (strcmp(token, "quit") == 0) {
                 return 0;
                 break;
+            } else if (strcmp(token, "score") == 0) {
+                if (board_initialized) {
+                    int score = engine_score();
+                    printf("info string score cp %d\n", score);
+                } else {
+                    printf("info string board not initialized\n");
+                }
             }
 
             token = strtok(NULL, " ");

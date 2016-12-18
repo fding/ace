@@ -25,6 +25,7 @@ int tt_tot = 0;
 int alpha_cutoff_count = 0;
 int beta_cutoff_count = 0;
 int short_circuit_count = 0;
+int razor_count = 0;
 int branches = 0;
 
 int hashmapsize = (1ull << 20);
@@ -357,13 +358,24 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     if (alpha >= beta) return alpha;
 
     struct deltaset out;
+    int nmoves = 0;
     int score = 0;
     int i = 0;
     union transposition * stored;
 
+
+    generate_captures(&out, board);
+    nmoves = out.nmoves;
+
+    if (nmoves == 0) {
+        score = board_score(board, who, &out, alpha, beta);
+        if (who) score = -score;
+        return score;
+    }
+
     // Check if we are out of time. If so, abort
     // Since clock() is costly, don't do this all the time!
-    if (branches % 65536 == 0) {
+    if (branches % 131072 == 0) {
         if (!timer_continue(timer) || signal_stop) {
             out_of_time = 1;
         }
@@ -372,12 +384,7 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     move_t tablemove;
     move_t best;
 
-    int nmoves = 0;
-    generate_captures(&out, board);
-
     struct deltaset out1;
-
-    nmoves = out.nmoves;
 
     // Initialize alpha to be the static score.
     // This gives us the option of not doing anything and accepting the board as is.
@@ -510,6 +517,20 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // Mark it as invalid, in case we return prematurely (due to time limit)
     best->piece = -1; 
 
+    int nmoves = 0;
+
+    generate_moves(&out, board);
+
+    nmoves = out.nmoves;
+    int initial_score = 0;
+
+    // Terminal condition: no more moves are left, or we run out of depth
+    if (nmoves == 0) {
+        initial_score = board_score(board, who, &out, alpha, beta);
+        if (who) initial_score = -initial_score;
+        return initial_score;
+    }
+
     // Detect cycles, which result in a drawn position
     for (i = 0; i < ply; i++) {
         if (board->hash == seen[i]) {
@@ -521,7 +542,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
     // Check if we are out of time. If so, abort
     // Since clock() is costly, don't do this all the time!
-    if (branches % 65536 == 0) {
+    if (branches % 131072 == 0) {
         // Check if we are out of time. If so, abort
         if (!timer_continue(timer) || signal_stop) {
             out_of_time = 1;
@@ -530,17 +551,11 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         }
     }
 
-    int nmoves = 0;
-
-    generate_moves(&out, board);
-
-    nmoves = out.nmoves;
-
     if (extensions > 0 && !nullmode) {
         if (out.check) {
             if (extensions > 2 * ONE_PLY) {
                 extensions -= ONE_PLY;
-                depth += ONE_PLY;
+                depth += 3 * ONE_PLY / 2;
                 extended = 1;
             }
             else {
@@ -555,12 +570,12 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
                         if (!((1ull << prev->square2) & out.my_attacks))
                             score += material_table[prev->promotion];
                     }
-                    if (see >= 0) {
-                        depth += ONE_PLY + ONE_PLY/2;
-                        extensions -= ONE_PLY + ONE_PLY/2;
+                    if (see > 0) {
+                        depth += ONE_PLY;
+                        extensions -= ONE_PLY;
                         extended = 1;
                         if (nmoves == 1) {
-                            depth += ONE_PLY/2;
+                            depth += ONE_PLY;
                         }
                     }
                 }
@@ -568,26 +583,17 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         }
         else if (nmoves == 1) {
             extensions -= ONE_PLY;
-            depth += ONE_PLY;
+            depth += 2 * ONE_PLY;
             extended = 1;
         }
     }
     
-    int initial_score = 0;
     // Terminal condition: no more moves are left, or we run out of depth
-    if (depth < ONE_PLY || nmoves == 0) {
-        if (nmoves == 0) {
-            initial_score = board_score(board, who, &out, alpha, beta);
-            if (who) initial_score = -initial_score;
-            ply--;
-            return initial_score;
-        }
-
+    if (depth < ONE_PLY) {
         score = qsearch(board, timer, 32 * ONE_PLY, alpha, beta, who);
         ply--;
         return score;
     }
-
 
     move_t tablemove;
     tablemove.piece = -1;
@@ -606,9 +612,10 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     if (who) initial_score = -initial_score;
 
     // Razoring (TODO: check if a pawn is promotable)
-    if (depth < 3 * ONE_PLY && !out.check && nmoves > 1 && beta == alpha + 1 && initial_score + 600 <= alpha && tablemove.piece == -1) {
+    if (depth < 3 * ONE_PLY && !out.check && nmoves > 2 && beta == alpha + 1 && initial_score + 600 <= alpha && tablemove.piece == -1) {
         score = qsearch(board, timer, 32 * ONE_PLY, alpha, beta, who);
         if (score < alpha - 700) {
+            razor_count += 1;
             ply--;
             return score;
         }
@@ -619,33 +626,36 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // then our move must have been great
     // We check if we have at least 5 pieces. Otherwise, we might encounter zugzwang
     // TODO: ply > 1?
-    if (depth >= 2 * ONE_PLY && nullmode == 0 && !out.check &&
+    if (depth >= 4 * ONE_PLY && nullmode == 0 && !out.check &&
             (board->pieces[who][KNIGHT] | board->pieces[who][BISHOP] | board->pieces[who][ROOK] | board->pieces[who][QUEEN])) {
         uint64_t old_enpassant = board_flip_side(board, 1);
-        int rdepth = depth - 3 * ONE_PLY - depth / 4;
-        score = -search(board, timer, &temp, NULL, rdepth, -beta, -beta + 1, extensions, 1, 1 - who);
-        if (score >= beta) {
-            ply--;
-            board_flip_side(board, old_enpassant);
-            board->enpassant = old_enpassant;
-            return score;
-        } else {
-            // Mate threat extension: if not doing anything allows opponents to checkmate us,
-            // we are in a potentially dangerous situation, so extend search
-            score = search(board, timer, &temp, NULL, rdepth, CHECKMATE/2 - 1, CHECKMATE/2, extensions, 1, 1 - who);
-            board_flip_side(board, old_enpassant);
-            board->enpassant = old_enpassant;
-            if (score > CHECKMATE/2) {
-                extensions -= ONE_PLY/2;
-                depth += ONE_PLY;
-                extended = 1;
+        int rdepth = depth - 2 * ONE_PLY - depth / 4;
+        if (rdepth > 0) {
+            score = -search(board, timer, &temp, NULL, rdepth, -beta, -beta + 1, extensions, 1, 1 - who);
+            if (score >= beta) {
+                ply--;
+                board_flip_side(board, old_enpassant);
+                board->enpassant = old_enpassant;
+                return score;
+            } else {
+                // Mate threat extension: if not doing anything allows opponents to checkmate us,
+                // we are in a potentially dangerous situation, so extend search
+                score = search(board, timer, &temp, NULL, rdepth, CHECKMATE/2 - 1, CHECKMATE/2, extensions, 1, 1 - who);
+                board_flip_side(board, old_enpassant);
+                board->enpassant = old_enpassant;
+                if (score > CHECKMATE/2 && extensions > 0) {
+                    extensions -= ONE_PLY/2;
+                    depth += ONE_PLY;
+                    extended = 1;
+                }
             }
         }
     }
 
     // Internal iterative depening
     if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 5 * ONE_PLY && !nullmode) {
-        search(board, timer, &tablemove, prev, depth - 2 * ONE_PLY, alpha, beta, 0, nullmode, who);
+        int rdepth = depth - depth / 2;
+        search(board, timer, &tablemove, prev, rdepth, alpha, beta, 0, nullmode, who);
     }
 
     int nchecks = sort_deltaset(board, who, &out, &tablemove);
@@ -694,8 +704,9 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
                 score = -search(board, timer, &temp, move, depth - ONE_PLY, -beta, -alpha, extensions, nullmode, 1 - who);
             } else {
                 score = -search(board, timer, &temp, move, depth - ONE_PLY, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
-                if (!out_of_time && score >= alpha && score < beta)
+                if (!out_of_time && score >= alpha && score < beta) {
                     score = -search(board, timer, &temp, move, depth - ONE_PLY, -beta, -alpha, extensions, nullmode, 1 - who);
+                }
             }
         }
         reverse_move(board, move);
@@ -748,6 +759,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     alpha_cutoff_count = 0;
     beta_cutoff_count = 0;
     short_circuit_count = 0;
+    razor_count = 0;
     branches = 0;
 
     alpha = -INFINITY;
@@ -771,32 +783,11 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
         ply = 0;
         // Analyze this position so that when we leave the opening,
         // we have some entries in the transposition table
-        if (infinite) {
-            for (d = 6 * ONE_PLY; d < 40 * ONE_PLY; d += ONE_PLY) {
-                s = search(board, timer, &temp, NULL, d, alpha, beta, 3 * ONE_PLY, 0 /* null-mode */, 1 - who);
-                if (out_of_time) break;
-                if (flags & FLAGS_UCI_MODE) {
-                    printf("info depth %d ", d / ONE_PLY);
-                    printf("score ");
-                    if (is_checkmate(s)) {
-                        if (s > 0)
-                            printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
-                        else
-                            printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
-                    }
-                    else {
-                        printf("cp %d ", s);
-                    }
-                    printf("time %lu pv %s", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
-                    print_pv(board, d / ONE_PLY);
-                    printf("\n");
-
-                }
-            }
-        } else {
-            s = search(board, timer, &temp, NULL, 6 * ONE_PLY, alpha, beta, 3 * ONE_PLY, 0 /* null-mode */, 1 - who);
+        for (d = 6 * ONE_PLY; d < 40 * ONE_PLY; d += ONE_PLY) {
+            s = search(board, timer, &temp, NULL, d, alpha, beta, 3 * ONE_PLY, 0 /* null-mode */, 1 - who);
+            if (out_of_time) break;
             if (flags & FLAGS_UCI_MODE) {
-                printf("info depth %d ", d / 10);
+                printf("info depth %d ", d / ONE_PLY);
                 printf("score ");
                 if (is_checkmate(s)) {
                     if (s > 0)
@@ -810,7 +801,9 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
                 printf("time %lu pv %s", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
                 print_pv(board, d / ONE_PLY);
                 printf("\n");
+
             }
+            if (!infinite) break;
         }
         reverse_move(board, &best);
     } else {
@@ -825,7 +818,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
 
         ply = 0;
         // A depth-4 search should always be accomplishable within the time limit
-        s = search(board, timer, &best, NULL, 4 * ONE_PLY, -INFINITY, INFINITY, 0, 0 /* null-mode */, who);
+        s = search(board, timer, &best, NULL, 6 * ONE_PLY, -INFINITY, INFINITY, 0, 0 /* null-mode */, who);
         prev_score[who] = s;
         temp = best;
         // Iterative deepening
@@ -833,23 +826,27 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
             // Aspirated search: we hope that the score is between alpha and beta.
             // If so, then we have greatly increased search speed.
             // If not, we have to restart search
-            alpha = prev_score[who] - leeway_table[(d-6 * ONE_PLY)/ONE_PLY];
-            beta = prev_score[who] + leeway_table[(d-6 * ONE_PLY)/ONE_PLY];
-            int changea = leeway_table[(d-ONE_PLY)/ONE_PLY];
-            int changeb = leeway_table[(d-ONE_PLY)/ONE_PLY];
+            alpha = prev_score[who] - 50;
+            beta = prev_score[who] + 50;
+            int changea = 50; // leeway_table[(d-ONE_PLY)/ONE_PLY];
+            int changeb = 50; // leeway_table[(d-ONE_PLY)/ONE_PLY];
             while (1) {
                 ply = 0;
-                s = search(board, timer, &best, NULL, d, alpha, beta, 5 * ONE_PLY, 0 /* null-mode */, who);
+                s = search(board, timer, &best, NULL, d, alpha, beta, 6 * ONE_PLY, 0 /* null-mode */, who);
                 if (out_of_time) {
                     break;
                 }
                 if (s <= alpha) {
+                    if (debug_mode)
+                        printf("info string missed aspiration: alpha=%d, beta=%d, score=%d\n", alpha, beta, s);
+                    changea *= 8;
                     alpha = alpha - changea;
-                    changea *= 4;
                 }
                 else if (s >= beta) {
+                    if (debug_mode)
+                        printf("info string missed aspiration: alpha=%d, beta=%d, score=%d\n", alpha, beta, s);
+                    changeb *= 8;
                     beta = beta + changeb;
-                    changeb *= 4;
                 } else {
                     assert(best.piece != -1);
                     break;
@@ -880,35 +877,40 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
                     printf("time %lu pv", (clock() - start) * 1000 / CLOCKS_PER_SEC);
                     print_pv(board, d / ONE_PLY);
                     printf("\n");
-    struct deltaset out;
-    generate_moves(&out, board);
-    move_t tablemove;
-    tablemove.piece = -1;
-    sort_deltaset(board, who, &out, &tablemove);
-    int i;
-    char buffer[8];
-    printf("Move sorting: ");
-    for (i = 0; i < out.nmoves; i++) {
-    union transposition * stored;
-            apply_move(board, &out.moves[i]);
-            int score=0;
-            int asdf=0;
-            const char* type = "Unknown";
-    if (ttable_read(board->hash, &stored) == 0) {
-        score = transform_checkmate(board, stored);
-        asdf = stored->metadata.depth;
-        if (stored->metadata.type & EXACT)
-          type = "Exact";
-        if (stored->metadata.type & ALPHA_CUTOFF)
-          type = "Lower bound";
-        if (stored->metadata.type & BETA_CUTOFF)
-          type = "Upper bound";
-    }
-            reverse_move(board, &out.moves[i]);
-      move_to_algebraic(board, buffer, &out.moves[i]);
-      printf("%s (%d at depth %d. Type=%s) ", buffer, -score, asdf, type);
-    }
-    printf("\n");
+
+                    if (debug_mode) {
+                        struct deltaset out;
+                        generate_moves(&out, board);
+                        move_t tablemove;
+                        tablemove.piece = -1;
+                        sort_deltaset(board, who, &out, &tablemove);
+                        int i;
+                        char buffer[8];
+                        printf("info string best moves: ");
+                        for (i = 0; i < out.nmoves; i++) {
+                            union transposition * stored;
+                            apply_move(board, &out.moves[i]);
+                            int node_score=0;
+                            int node_depth=0;
+                            const char* type = "Unknown";
+                            if (ttable_read(board->hash, &stored) == 0) {
+                                node_score = transform_checkmate(board, stored);
+                                node_depth = stored->metadata.depth;
+                                if (stored->metadata.type & EXACT)
+                                  type = "Exact";
+                                if (stored->metadata.type & ALPHA_CUTOFF)
+                                  type = "Lower bound";
+                                if (stored->metadata.type & BETA_CUTOFF)
+                                  type = "Upper bound";
+                            }
+                            reverse_move(board, &out.moves[i]);
+                            move_to_algebraic(board, buffer, &out.moves[i]);
+                            printf("%s (%d at depth %d. Type=%s) ",
+                                    buffer, -node_score,
+                                    node_depth, type);
+                        }
+                        printf("\n");
+                    }
                 }
                 if (!infinite && is_checkmate(s)) {
                     break;
@@ -925,6 +927,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     fprintf(stderr, "Best scoring move is %s: %.2f\n", buffer, s/100.0);
     fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d, depth: %d, TT hits: %.5f\n",
             branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d - 2 * ONE_PLY, tt_hits/((float) tt_tot));
+
     return best;
 }
 

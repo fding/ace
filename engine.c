@@ -139,10 +139,13 @@ void save_opening_table(char * fname) {
 // we try to win instead of draw
 // Currently, it does nothing.
 int draw_value = 0;
+int debug_mode = 0;
 int engine_set_param(int name, int value) {
     if (name == ACE_PARAM_CONTEMPT) {
         draw_value = value;
         return 0;
+    } else if (name == ACE_PARAM_DEBUG) {
+        debug_mode = value;
     }
     return 1;
 }
@@ -182,10 +185,15 @@ void engine_new_game() {
 
 char* engine_new_game_from_position(char* position) {
     char * pos;
-    memset(position_count_table, 0, sizeof(position_count_table));
+    struct board old_board = state.board;
     pos = board_init_from_fen(&state.board, position);
-    state.won = 0;
-    srand(time(NULL));
+    if (!pos) {
+        state.board = old_board;
+    } else {
+        memset(position_count_table, 0, sizeof(position_count_table));
+        state.won = 0;
+        srand(time(NULL));
+    }
     return pos;
 }
 

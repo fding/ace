@@ -19,7 +19,7 @@ generate_magic: generate_magic.c
 magic.c: generate_magic
 	./generate_magic > magic.c
 
-libace.a: board.c board.h parse.c engine.c search.c search.h util.c util.h evaluation.c magic.c magic.h moves.c moves.h timer.c timer.h pawns.c pawns.h
+libace.a: board.c board.h parse.c engine.c search.c search.h util.c util.h evaluation.c magic.c magic.h moves.c moves.h timer.c timer.h pawns.c pawns.h evaluation_parameters.c evaluation_parameters.h endgame.c endgame.h pfkpk/kpk.o
 	$(CC) $(CFLAGS) -flto -o magic.o -c magic.c
 	$(CC) $(CFLAGS) -flto -o moves.o -c moves.c
 	$(CC) $(CFLAGS) -flto -o pawns.o -c pawns.c
@@ -28,9 +28,11 @@ libace.a: board.c board.h parse.c engine.c search.c search.h util.c util.h evalu
 	$(CC) $(CFLAGS) -flto -o util.o -c util.c
 	$(CC) $(CFLAGS) -flto -o engine.o -c engine.c
 	$(CC) $(CFLAGS) -flto -o search.o -c search.c
+	$(CC) $(CFLAGS) -flto -o evaluation_parameters.o -c evaluation_parameters.c
+	$(CC) $(CFLAGS) -flto -o endgame.o -c endgame.c
 	$(CC) $(CFLAGS) -flto -o evaluation.o -c evaluation.c
 	$(CC) $(CFLAGS) -flto -o timer.o -c timer.c
-	$(CC) $(CFLAGS) -flto -r -o ace.o magic.o moves.o parse.o board.o util.o engine.o search.o evaluation.o pawns.o
+	$(CC) $(CFLAGS) -flto -r -o ace.o magic.o moves.o parse.o board.o util.o engine.o search.o evaluation_parameters.o evaluation.o pawns.o endgame.o pfkpk/kpk.o
 	ar rc libace.a ace.o timer.o
 
 clean:
