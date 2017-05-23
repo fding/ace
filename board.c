@@ -652,6 +652,7 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
     mvs->check = 0;
 
     mask = enemy_occupancy;
+    int pawn_mask = mask | RANK1 | RANK8;
 
     // The following are ordered in likelihood that moving the piece is a good move
     // Knights
@@ -663,7 +664,6 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
         else {
             attack = attack_set_knight(square, friendly_occupancy, enemy_occupancy) & mask;
             deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy);
-            mvs->my_attacks |= attack;
         }
     }
 
@@ -679,7 +679,6 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
             attack = attack_set_bishop(square, friendly_occupancy, enemy_occupancy) & mask;
         }
         deltaset_add_move(board, who, mvs, BISHOP, square, attack, friendly_occupancy, enemy_occupancy);
-        mvs->my_attacks |= attack;
     }
 
     // Pawns
@@ -689,12 +688,11 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
                 pinmask = ray_between(kingsquare, pinsq);
                 if (pinmask & (1ull << square)) break;
             }
-            attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pinmask;
+            attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pinmask & pawn_mask;
         } else {
-            attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy);
+            attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pawn_mask;
         }
         deltaset_add_move(board, who, mvs, PAWN, square, attack, friendly_occupancy, enemy_occupancy);
-        mvs->my_attacks |= attack;
     }
 
     // Queens
@@ -709,7 +707,6 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
             attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask;
         }
         deltaset_add_move(board, who, mvs, QUEEN, square, attack, friendly_occupancy, enemy_occupancy);
-        mvs->my_attacks |= attack;
     }
 
     // Rooks
@@ -724,13 +721,11 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
             attack = attack_set_rook(square, friendly_occupancy, enemy_occupancy) & mask;
         }
         deltaset_add_move(board, who, mvs, ROOK, square, attack, friendly_occupancy, enemy_occupancy);
-        mvs->my_attacks |= attack;
     }
 
     // King
     attack = attack_set_king(kingsquare, friendly_occupancy, enemy_occupancy);
     attack = ~opponent_attacks & attack & mask;
     deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy);
-    mvs->my_attacks |= attack;
 }
 
