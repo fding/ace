@@ -27,8 +27,6 @@ int beta_cutoff_count = 0;
 int short_circuit_count = 0;
 int branches = 0;
 
-int hashmapsize = (1ull << 20);
-
 // Global state
 
 int ply;
@@ -61,44 +59,34 @@ static void ttable_update_with_hash(int loc, union transposition * update, int c
     union transposition* secondary_entry = &ttable[loc].slot2;
     if (entry->metadata.type) {
         if (entry->metadata.hash == update->metadata.hash) {
-            int should_replace = (!(entry->metadata.type & MOVESTORED) && (update->metadata.type & MOVESTORED)) ||
-                (!(entry->metadata.type & EXACT) && (update->metadata.type & EXACT));
-            if (should_replace || update->metadata.depth > entry->metadata.depth) {
-                *entry = *update;
-            }
+            *entry = *update;
         } else {
             if (!secondary_entry->metadata.type) {
                 *secondary_entry = *update;
                 return;
             }
             if (secondary_entry->metadata.hash == update->metadata.hash) {
-                int should_replace = (!(secondary_entry->metadata.type & MOVESTORED) && (update->metadata.type & MOVESTORED)) ||
-                    (!(secondary_entry->metadata.type & EXACT) && (update->metadata.type & EXACT));
-                if (should_replace || update->metadata.depth > secondary_entry->metadata.depth)
-                    *secondary_entry = *update;
+                *secondary_entry = *update;
             } else {
-                if (update->metadata.depth > entry->metadata.depth)
+                if (update->metadata.depth >= entry->metadata.depth)
                     *entry = *update;
                 else {
-                    if (secondary_entry->metadata.depth > entry->metadata.depth) {
+                    if (secondary_entry->metadata.depth >= entry->metadata.depth) {
                         *entry = *secondary_entry;
                     }
                     *secondary_entry = *update;
                 }
             }
         }
-    }
-    else {
-        *entry = *update;
+    } else {
         if (secondary_entry->metadata.type) {
             if (secondary_entry->metadata.hash == update->metadata.hash) {
-                int should_replace = (!(secondary_entry->metadata.type & MOVESTORED) && (update->metadata.type & MOVESTORED)) ||
-                    (!(secondary_entry->metadata.type & EXACT) && (update->metadata.type & EXACT));
-                if (should_replace || update->metadata.depth > secondary_entry->metadata.depth)
-                    *secondary_entry = *update;
+                *secondary_entry = *update;
             } else {
                 *entry = *update;
             }
+        } else {
+            *entry = *update;
         }
     }
 }
@@ -113,12 +101,12 @@ static int ttable_read(uint64_t hash, union transposition** value) {
     int loc = (hashmapsize - 1) & hash;
     uint32_t sig = hash >> 32;
     tt_tot += 1;
-    if (ttable[loc].slot1.metadata.hash == sig) {
-        *value = &ttable[loc].slot1;
+    if (ttable[loc].slot2.metadata.hash == sig) {
+        *value = &ttable[loc].slot2;
         tt_hits += 1;
         return 0;
-    } else if (ttable[loc].slot2.metadata.hash == sig) {
-        *value = &ttable[loc].slot2;
+    } else if (ttable[loc].slot1.metadata.hash == sig) {
+        *value = &ttable[loc].slot1;
         tt_hits += 1;
         return 0;
     }

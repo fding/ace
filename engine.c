@@ -16,6 +16,8 @@ struct ttable_entry* ttable;
 struct opening_entry* opening_table;
 uint64_t ttable_size = 0;
 
+int hashmapsize = 16777216;
+
 void initialize_endgame_tables();
 
 struct {
