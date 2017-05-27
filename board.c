@@ -83,6 +83,23 @@ uint64_t is_attacked_slider(struct board* board, uint64_t friendly_occupancy, ui
     return attackers;
 }
 
+uint64_t get_cheapest_attacker(struct board* board, uint64_t attackers, int who, int* piece) {
+    uint64_t subset;
+    subset = attackers & board->pieces[who][PAWN];
+    if (subset) {*piece = PAWN; return subset & (-subset);}
+    subset = attackers & board->pieces[who][KNIGHT];
+    if (subset) {*piece = KNIGHT; return subset & (-subset);}
+    subset = attackers & board->pieces[who][BISHOP];
+    if (subset) {*piece = BISHOP; return subset & (-subset);}
+    subset = attackers & board->pieces[who][ROOK];
+    if (subset) {*piece = ROOK; return subset & (-subset);}
+    subset = attackers & board->pieces[who][QUEEN];
+    if (subset) {*piece = QUEEN; return subset & (-subset);}
+    subset = attackers & board->pieces[who][KING];
+    if (subset) {*piece = KING; return subset & (-subset);}
+    return 0;
+}
+
 uint64_t is_in_check(struct board* board, side_t who, uint64_t friendly_occupancy, uint64_t enemy_occupancy) {
     uint64_t king = board->pieces[who][KING];
     int square = LSBINDEX(king);
@@ -161,7 +178,7 @@ int apply_move(struct board* board, struct delta* move) {
     board->pieces[who][move->promotion] ^= mask2;
     board->pieces[who][move->piece] ^= mask1;
     board->nmoves += 1;
-    if (who) board->nmovesnocapture += 1;
+    board->nmovesnocapture += who;
 
     hupdate ^= square_hash_codes[move->square1][6 * who + move->piece];
     hupdate ^= square_hash_codes[move->square2][6 * who + move->promotion];
@@ -362,16 +379,18 @@ static void deltaset_add_move(struct board* board, side_t who, struct deltaset *
                 out->moves[i].square2 = square2;
                 out->moves[i].square1 = square1;
 
-                if (mask2 & board->pieces[1 - who][PAWN])
-                    out->moves[i].captured = PAWN;
-                else if (mask2 & board->pieces[1 - who][KNIGHT])
-                    out->moves[i].captured = KNIGHT;
-                else if (mask2 & board->pieces[1 - who][BISHOP])
-                    out->moves[i].captured = BISHOP;
-                else if (mask2 & board->pieces[1 - who][ROOK])
-                    out->moves[i].captured = ROOK;
-                else if (mask2 & board->pieces[1 - who][QUEEN])
-                    out->moves[i].captured = QUEEN;
+                if (mask2 & enemy) {
+                    if (mask2 & board->pieces[1 - who][PAWN])
+                        out->moves[i].captured = PAWN;
+                    else if (mask2 & board->pieces[1 - who][KNIGHT])
+                        out->moves[i].captured = KNIGHT;
+                    else if (mask2 & board->pieces[1 - who][BISHOP])
+                        out->moves[i].captured = BISHOP;
+                    else if (mask2 & board->pieces[1 - who][ROOK])
+                        out->moves[i].captured = ROOK;
+                    else if (mask2 & board->pieces[1 - who][QUEEN])
+                        out->moves[i].captured = QUEEN;
+                }
 
                 i++;
             }
@@ -383,18 +402,19 @@ static void deltaset_add_move(struct board* board, side_t who, struct deltaset *
             out->moves[i].square2 = square2;
             out->moves[i].square1 = square1;
 
-            if (mask2 & board->pieces[1 - who][PAWN])
-                out->moves[i].captured = PAWN;
-            else if (mask2 & board->pieces[1 - who][KNIGHT])
-                out->moves[i].captured = KNIGHT;
-            else if (mask2 & board->pieces[1 - who][BISHOP])
-                out->moves[i].captured = BISHOP;
-            else if (mask2 & board->pieces[1 - who][ROOK])
-                out->moves[i].captured = ROOK;
-            else if (mask2 & board->pieces[1 - who][QUEEN])
-                out->moves[i].captured = QUEEN;
-            // En-passant
-            else if (piece == PAWN && (square2 - square1) % 8 != 0) {
+            if (mask2 & enemy) {
+                if (mask2 & board->pieces[1 - who][PAWN])
+                    out->moves[i].captured = PAWN;
+                else if (mask2 & board->pieces[1 - who][KNIGHT])
+                    out->moves[i].captured = KNIGHT;
+                else if (mask2 & board->pieces[1 - who][BISHOP])
+                    out->moves[i].captured = BISHOP;
+                else if (mask2 & board->pieces[1 - who][ROOK])
+                    out->moves[i].captured = ROOK;
+                else if (mask2 & board->pieces[1 - who][QUEEN])
+                    out->moves[i].captured = QUEEN;
+            } else if (piece == PAWN && (square2 - square1) % 8 != 0) {
+                // En-passant
                 out->moves[i].captured = PAWN;
                 out->moves[i].misc = 0x40;
             }

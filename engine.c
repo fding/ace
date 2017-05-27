@@ -197,6 +197,19 @@ void engine_clear_state() {
     memset(history, 0, 2 * 64 * 64 * sizeof(int));
 }
 
+void engine_print_moves() {
+    char buffer[16];
+    struct board clean_board;
+    board_init(&clean_board);
+    for (int i = 0; i < state.board.nmoves; i++) {
+        move_to_calgebraic(&clean_board, buffer, &state.moves[i]);
+        if (i % 2 == 0)
+            printf("%d. ", i / 2 + 1);
+        printf("%s ", buffer);
+        apply_move(&clean_board, &state.moves[i]);
+    }
+}
+
 int engine_score() {
     struct deltaset mvs;
     generate_moves(&mvs, &state.board);

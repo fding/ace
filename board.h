@@ -227,6 +227,11 @@ uint64_t board_flip_side(struct board* board, uint64_t enpassant);
 /* Board properties */
 uint64_t board_occupancy(struct board* board, side_t who);
 int board_npieces(struct board* out, side_t who);
+
+uint64_t is_attacked(struct board* board, uint64_t friendly_occupancy, uint64_t enemy_occupancy, side_t who, int square);
+uint64_t is_attacked_slider(struct board* board, uint64_t friendly_occupancy, uint64_t enemy_occupancy, side_t who, int square);
+uint64_t get_cheapest_attacker(struct board* board, uint64_t attackers, int who, int* piece);
+
 uint64_t is_in_check(struct board* board, side_t who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 uint64_t is_in_check_slider(struct board* board, side_t who, uint64_t friendly_occupancy, uint64_t enemy_occupancy);
 char get_piece_on_square(struct board* board, int square);

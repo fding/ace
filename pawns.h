@@ -7,8 +7,8 @@ struct pawn_structure {
     uint64_t pawn_hash;
     uint64_t passed_pawns[2];
     uint64_t holes[2];
-    int score;
-    int score_eg;
+    int32_t score;
+    int32_t score_eg;
 };
 
 struct pawn_structure * evaluate_pawns(struct board* board);

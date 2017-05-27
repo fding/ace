@@ -182,12 +182,15 @@ int main(int argc, char* argv[]) {
     engine_print();
     fflush(stderr);
     if (engine_won() == 2) {
+        engine_print_moves();
         fprintf(stderr, "White won\n");
         return 2;
     } else if (engine_won() == 3) {
+        engine_print_moves();
         fprintf(stderr, "Black won\n");
         return 1;
     } else {
+        engine_print_moves();
         fprintf(stderr, "Draw\n");
         return 0;
     }

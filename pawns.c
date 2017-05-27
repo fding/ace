@@ -4,10 +4,11 @@
 #include "moves.h"
 #include <stdlib.h>
 
-struct pawn_structure pawn_hashmap[8192];
+#define PAWN_HASH_SIZE (1024 * 8)
+struct pawn_structure pawn_hashmap[PAWN_HASH_SIZE];
 
 uint64_t hash(uint64_t wpawns, uint64_t bpawns) {
-    return ((wpawns ^ bpawns) * 0x2480041000800801ull) & 0xfff;
+    return ((wpawns ^ bpawns) * 0x2480041000800801ull) & (PAWN_HASH_SIZE - 1);
 }
 
 int pawn_table[64] = {

@@ -35,6 +35,7 @@ void engine_stop_search();
 int engine_move(char* move);
 struct board* engine_get_board();
 void engine_print();
+void engine_print_moves();
 unsigned char engine_get_who();
 int engine_won();
 int engine_score();

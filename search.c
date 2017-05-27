@@ -27,13 +27,16 @@ int beta_cutoff_count = 0;
 int short_circuit_count = 0;
 int branches = 0;
 
+extern int evaluation_cache_calls;
+extern int evaluation_cache_hits;
+
 // Global state
 
 int ply;
 int out_of_time = 0;
 volatile int signal_stop = 0;
 
-int material_table[5] = {100, 510, 325, 333, 900};
+int material_table[6] = {100, 500, 300, 300, 900, 30000};
 
 struct killer_slot {
     move_t m1;
@@ -43,6 +46,7 @@ struct killer_slot {
 struct killer_slot killer[32];
 uint64_t seen[64];
 int history[2][64][64];
+int max_history = 0;
 
 
 static int ttable_search(struct board* board, int depth, move_t* best, move_t* move, int * alpha, int beta);
@@ -157,18 +161,47 @@ static void insertion_sort(move_t* moves, int* scores, int start, int end) {
 }
 
 // Static exchange evaluation for a move
-static int move_see(struct board* board, struct deltaset* set, move_t* move) {
-    int score = 0;
-    if ((1ull << move->square2) & set->opponent_attacks)
-        score -= material_table[move->piece];
-    if (move->captured != -1) {
-        score += material_table[move->captured];
-    }
-    if (move->promotion != move->piece) {
-        if (!((1ull << move->square2) & set->opponent_attacks))
-            score += material_table[move->promotion];
-    }
-    return score;
+int move_see(struct board* board, move_t* move) {
+    uint64_t white_occupancy = board_occupancy(board, 0);
+    uint64_t black_occupancy = board_occupancy(board, 1);
+    uint64_t from = (1ull) << (move->square1);
+    int who = (white_occupancy & from) ? 0 : 1;
+    uint64_t occupancy = white_occupancy | black_occupancy;
+
+    int gain[32];
+    int d = 0;
+    uint64_t max_xray = board->pieces[0][PAWN] | board->pieces[1][PAWN] |
+                        board->pieces[0][BISHOP] | board->pieces[1][BISHOP] |
+                        board->pieces[0][ROOK] | board->pieces[1][ROOK] |
+                        board->pieces[0][QUEEN] | board->pieces[1][QUEEN];
+    uint64_t attackers = is_attacked(board, 0, occupancy, 0, move->square2) |
+        is_attacked(board, 0, occupancy, 1, move->square2);
+    int piece = move->piece;
+
+    if (move->captured == -1)
+        gain[d] = material_table[move->captured];
+    else
+        gain[d] = material_table[move->promotion] - material_table[move->piece];
+
+    do {
+        d++;
+        gain[d] = material_table[piece] - gain[d-1];
+        if (MAX(-gain[d-1], gain[d]) < 0)
+            break;
+        attackers ^= from;
+        occupancy ^= from;
+        if (from & max_xray) {
+            attackers |= (is_attacked_slider(board, 0, occupancy, 0, move->square2) |
+                          is_attacked_slider(board, 0, occupancy, 1, move->square2))
+                         & occupancy;
+        }
+        from = get_cheapest_attacker(board, attackers, (d + who) & 1, &piece);
+    } while (from);
+
+    while (--d)
+        gain[d-1] = -MAX(-gain[d-1], gain[d]);
+
+    return gain[0];
 }
 
 /* Sorts the available moves according to how good it is. The criterion is:
@@ -182,7 +215,7 @@ static int move_see(struct board* board, struct deltaset* set, move_t* move) {
  *
  * Ties are broken by the score of the position after the move as recorded in the transposition table
  */
-static int sort_deltaset(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
+static void sort_deltaset(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
     int i, k;
     move_t temp;
     int scores[256];
@@ -195,21 +228,16 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
         if (tablemove->piece != -1 && move_equal(*tablemove, set->moves[i]))
             scores[i] = 60000;
         else {
-            // This way, checks will be before all other moves except checkmates
-            if (gives_check(board, board_occupancy(board, 1-who) | board_occupancy(board, who), &set->moves[i], who))
-                scores[i] += 20000 + move_see(board, set, &set->moves[i]);
-
-        apply_move(board, &set->moves[i]);
-    union transposition * stored;
-    if (ttable_read(board->hash, &stored) == 0) {
-        scores[i] = -transform_checkmate(board, stored);
-    }
-        reverse_move(board, &set->moves[i]);
+            apply_move(board, &set->moves[i]);
+            union transposition * stored;
+            if (ttable_read(board->hash, &stored) == 0) {
+                scores[i] = -transform_checkmate(board, stored);
+            }
+            reverse_move(board, &set->moves[i]);
         }
 
         if (scores[i] > 10000) k++;
     }
-    int nchecks = k;
 
     insertion_sort(set->moves, scores, 0, set->nmoves);
 
@@ -217,7 +245,7 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
     for (i = k; i < set->nmoves; i++) {
         if (set->moves[i].captured != -1 || 
                 (set->moves[i].piece == PAWN && set->moves[i].promotion != PAWN)) {
-            scores[k] = move_see(board, set, &set->moves[i]);
+            scores[k] = move_see(board, &set->moves[i]);
             move_copy(&temp, &set->moves[k]);
             move_copy(&set->moves[k++], &set->moves[i]);
             move_copy(&set->moves[i], &temp);
@@ -251,15 +279,14 @@ static int sort_deltaset(struct board* board, char who, struct deltaset* set, mo
 
     // History table
     for (i = k; i < set->nmoves; i++) {
-        scores[i] = history[who][set->moves[i].square1][set->moves[i].square2];
+        scores[i] = ((history[who][set->moves[i].square1][set->moves[i].square2] << 7) >> max_history);
     }
 
     insertion_sort(set->moves, scores, k, set->nmoves);
-    return nchecks;
 }
 
 /* Same thing, except that here, we only assume capture moves */
-static int sort_deltaset_qsearch(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
+static void sort_deltaset_qsearch(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
     int i;
     int scores[256];
 
@@ -269,13 +296,10 @@ static int sort_deltaset_qsearch(struct board* board, char who, struct deltaset*
         if (tablemove->piece != -1 && move_equal(*tablemove, set->moves[i]))
             scores[i] = 60000;
         else
-            scores[i] = move_see(board, set, &set->moves[i]);
-        if (gives_check(board, board_occupancy(board, who) | board_occupancy(board, 1-who), &set->moves[i], who))
-            scores[i] += 500;
+            scores[i] = move_see(board, &set->moves[i]);
     }
 
     insertion_sort(set->moves, scores, 0, set->nmoves);
-    return set->nmoves;
 }
 
 /* Transforms a mating score to its current context. For example, if we stored "mate on move 10"
@@ -420,7 +444,7 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
         // worse than alpha, this capture must really suck, so no need to consider it.
         // We never prune if we are in check, because that could easily result in mistaken evaluation
         if (!out.check) {
-            int see = move_see(board, &out, &out.moves[i]);
+            int see = move_see(board, &out.moves[i]);
             value = initial_score + see;
             if (value >= beta) {
                 alpha = value;
@@ -432,11 +456,9 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
             if (alpha < value) {
                 alpha = value;
             }
-            /*
             // Don't consider bad captures
-            if (!pvnode && !out.check && see < 0)
+            if (!out.check && see < 0)
                 continue;
-            */
         }
 
         apply_move(board, &out.moves[i]);
@@ -533,16 +555,9 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             }
             else {
                 if (prev) {
-                    int see = 0;
-                    if ((1ull << prev->square2) & out.my_attacks)
-                        see -= material_table[prev->piece];
-                    if (prev->captured != -1) {
-                        see += material_table[prev->captured];
-                    }
-                    if (prev->promotion != prev->piece) {
-                        if (!((1ull << prev->square2) & out.my_attacks))
-                            score += material_table[prev->promotion];
-                    }
+                    reverse_move(board, prev);
+                    int see = move_see(board, prev);
+                    apply_move(board, prev);
                     if (see >= 0) {
                         depth += ONE_PLY + ONE_PLY/2;
                         extensions -= ONE_PLY + ONE_PLY/2;
@@ -636,7 +651,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         search(board, timer, &tablemove, prev, depth - 2 * ONE_PLY, alpha, beta, 0, nullmode, who);
     }
 
-    int nchecks = sort_deltaset(board, who, &out, &tablemove);
+    sort_deltaset(board, who, &out, &tablemove);
 
     int allow_prune = !out.check && (nmoves > 6) && !extended;
     for (i = 0; i < out.nmoves; i++) {
@@ -644,7 +659,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         if (out.moves[i].captured != -1 && depth <= 2 * ONE_PLY && allow_prune) {
             // Don't consider bad captures
             // TODO: what happens if we end up skipping all legal moves? Should it trigger alpha cutoff?
-            if (move_see(board, &out, &out.moves[i]) < 0)
+            if (move_see(board, &out.moves[i]) < 0)
                 continue;
         }
         // Futility pruning
@@ -653,10 +668,12 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         // because our move can only increase the positional scores,
         // which is not that large of a factor
         // TODO: more agressive pruning. If ply>7 and depth<=20, also prune with delta_cutoff=500
-        if (out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece && i >= nchecks && depth <= 6 * ONE_PLY
+        if (out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece && depth <= 6 * ONE_PLY
                 && alpha > -CHECKMATE/2 && beta < CHECKMATE/2 && allow_prune) {
-            if (initial_score + futility_margin[depth / ONE_PLY] < alpha) {
-                continue;
+            if (!gives_check(board, board_occupancy(board, 1 - who) | board_occupancy(board, who), &out.moves[i], who)) {
+                if (initial_score + futility_margin[depth / ONE_PLY] < alpha) {
+                    continue;
+                }
             }
         }
         // Late move reduction:
@@ -697,6 +714,8 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             type = EXACT | MOVESTORED;
             pvariation = 0;
             history[who][move->square1][move->square2] += depth / ONE_PLY;
+            while (history[who][move->square1][move->square2] > (1 << max_history))
+                max_history++;
         }
         if (beta <= alpha) {
             beta_cutoff_count += 1;
@@ -740,6 +759,17 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
 
     alpha = -INFINITY;
     beta = INFINITY;
+
+    for (int w = 0; w < 2; w++) {
+        for (int sq1 = 0; sq1 < 64; sq1++) {
+            for (int sq2 = 0; sq2 < 64; sq2++) {
+                history[w][sq1][sq2] /= 8;
+            }
+        }
+    }
+    max_history -= 3;
+    if (max_history < 0)
+        max_history = 0;
 
     static int leeway_table[32] = {40, 30, 20, 10, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
@@ -911,8 +941,8 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     move_to_calgebraic(board, buffer, &best);
 
     fprintf(stderr, "Best scoring move is %s: %.2f\n", buffer, s/100.0);
-    fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d, depth: %d, TT hits: %.5f\n",
-            branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d - 2 * ONE_PLY, tt_hits/((float) tt_tot));
+    fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d, depth: %d, TT hits: %.5f, Eval hits: %.5f\n",
+            branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d - 2 * ONE_PLY, tt_hits/((float) tt_tot), evaluation_cache_hits / ((float) evaluation_cache_calls));
     return best;
 }
 

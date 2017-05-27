@@ -15,6 +15,38 @@
 #define RANK7 0x00ff000000000000ull
 #define RANK8 0xff00000000000000ull
 
+#define PINNED
+
+struct evaluation_hash_entry {
+    uint32_t hash;
+    int32_t score;
+};
+
+#define EVALUATION_HASH_SIZE (1024 * 256)
+struct evaluation_hash_entry evaluation_hash[EVALUATION_HASH_SIZE];
+
+int evaluation_cache_calls;
+int evaluation_cache_hits;
+
+int read_evaluation_cache(struct board* board, int* val) {
+    int loc = board->hash & (EVALUATION_HASH_SIZE - 1);
+    int sig = board->hash >> 32;
+    evaluation_cache_calls++;
+    if (evaluation_hash[loc].hash == sig) {
+        *val = evaluation_hash[loc].score;
+        evaluation_cache_hits++;
+        return 0;
+    }
+    return 1;
+}
+
+void store_evaluation_cache(struct board* board, int val) {
+    int loc = board->hash & (EVALUATION_HASH_SIZE - 1);
+    int sig = board->hash >> 32;
+    evaluation_hash[loc].hash = sig;
+    evaluation_hash[loc].score = val;
+}
+
 
 static int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs);
 static int board_score_middlegame(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta);
@@ -34,7 +66,7 @@ int knight_table[64] = {
      -10,  -5,  0,  0,  0, 0,  -5,  -10,
      0,  15,  25,  35,  35,  25,  15,  0,
     -10, 10,  20,  30,  30,  20, 10, -10,
-    -10, 5,  15,  20,  20,  15, 0, -10,
+    -10, 5,  15,  20,  20,  15, 5, -10,
     -15, 0,  10,  15,  15,  10, 0, -15,
     -20, -15, -10, -10, -10, -10, -15, -20,
     -40, -20, -15, -15, -15, -15, -20, -40,
@@ -202,6 +234,11 @@ int material_for_player_endgame(struct board* board, side_t who) {
  *  2. Finer material nuances, like material hash table
  */
 int board_score(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta) {
+    int score;
+    if (read_evaluation_cache(board, &score) == 0) {
+        return score;
+    }
+
     int nmoves = mvs->nmoves;
     if (nmoves == 0 && mvs->check) {
         if (who)
@@ -217,17 +254,17 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
             popcnt(board_occupancy(board, 1) ^ P2BM(board, BLACKPAWN)) - 2);
 
     if (phase >= 8) {
-        return board_score_middlegame(board, who, mvs, alpha, beta);
+        score = board_score_middlegame(board, who, mvs, alpha, beta);
+    } else if (phase <= 3) {
+        score = board_score_endgame(board, who, mvs);
+    } else {
+        int score_mg = board_score_middlegame(board, who, mvs, alpha, beta);
+        int score_eg = board_score_endgame(board, who, mvs);
+
+        score = (phase * score_mg  + (8 - phase) * score_eg) / 8;
     }
-
-    if (phase <= 3) {
-        return board_score_endgame(board, who, mvs);
-    }
-
-    int score_mg = board_score_middlegame(board, who, mvs, alpha, beta);
-    int score_eg = board_score_endgame(board, who, mvs);
-
-    return (phase * score_mg  + (8 - phase) * score_eg) / 8;
+    store_evaluation_cache(board, score);
+    return score;
 }
 
 static int board_score_middlegame(struct board* board, unsigned char who, struct deltaset* mvs, int alpha, int beta) {
@@ -319,16 +356,16 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
         }
 
         bmloop(P2BM(board, 6 * w + KNIGHT), square, temp) {
-            int loc = (w == 0) ? 64 - square : square;
+            int loc = (w == 0) ? 63 - square : square;
             int oldsubscore = subscore;
             subscore += knight_table[loc];
             SQPRINTF("Sided knight position score for %c%c: %d\n", square, knight_table[loc]);
             // Outposts are good
             if ((1ull << square) & outposts[w]) {
-                subscore += 31;
+                subscore += 16;
                 SQPRINTF("Sided knight outpost score for %c%c: %d\n", square, 31);
             } else if ((1ull << square) & holes[w]) {
-                subscore += 21;
+                subscore += 8;
                 SQPRINTF("Sided knight outpost score for %c%c: %d\n", square, 21);
             }
             uint64_t attack_mask = attack_set_knight(square, pieces[w], pieces[1 - w]);
@@ -356,8 +393,8 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 #ifdef PINNED
             // Pinned pieces aren't great, especially knights
             if ((1ull << square) & mvs->pinned) {
-                subscore -= 30;
-                SQPRINTF("Sided knight pinned penalty for %c%c: %d\n", square, -30);
+                subscore -= 15;
+                SQPRINTF("Sided knight pinned penalty for %c%c: %d\n", square, -15);
             }
 #endif
             SQPRINTF("Total value of knight on %c%c: %d\n", square, subscore - oldsubscore);
@@ -365,18 +402,18 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
         count = 0;
         bmloop(P2BM(board, 6 * w + BISHOP), square, temp) {
-            int loc = (w == 0) ? 64 - square : square;
+            int loc = (w == 0) ? 63 - square : square;
             int oldsubscore = subscore;
             subscore += bishop_table[loc];
             SQPRINTF("Sided bishop score for %c%c: %d\n", square, bishop_table[loc]);
             count += 1;
             if ((1ull << square) & outposts[w]) {
                 SQPRINTF("Sided bishop outpost for %c%c: %d\n", square, 14);
-                subscore += 14;
+                subscore += 12;
             }
             else if ((1ull << square) & holes[w]) {
                 SQPRINTF("Sided bishop outpost for %c%c: %d\n", square, 4);
-                subscore += 4;
+                subscore += 6;
             }
             uint64_t attack_mask = attack_set_bishop(square, pieces[w], pieces[1 - w]);
             uint64_t attack_mask_only_pawn = attack_set_bishop(square, pawns[w], pieces[1 - w]);
@@ -421,8 +458,8 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
             }
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned) {
-                SQPRINTF("Sided bishop pinned for %c%c: %d\n", square, -15);
-                subscore -= 15;
+                SQPRINTF("Sided bishop pinned for %c%c: %d\n", square, -10);
+                subscore -= 10;
             }
 #endif
             SQPRINTF("Total value of bishop on %c%c: %d\n", square, subscore - oldsubscore);
@@ -436,7 +473,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
         bmloop(P2BM(board, 6 * w + ROOK), square, temp) {
             file = square & 0x7;
             rank = square / 8;
-            int loc = (w == 0) ? 64 - square : square;
+            int loc = (w == 0) ? 63 - square : square;
             int oldsubscore = subscore;
             subscore += rook_table[loc];
             SQPRINTF("Sided rook for %c%c: %d\n", square, rook_table[loc]);
@@ -491,8 +528,8 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned) {
-                SQPRINTF("Sided rook pinned penalty for %c%c: %d\n", square, -5);
-                subscore -= 50;
+                SQPRINTF("Sided rook pinned penalty for %c%c: %d\n", square, -10);
+                subscore -= 10;
             }
 #endif
             SQPRINTF("Total value of rook on %c%c: %d\n", square, subscore - oldsubscore);
@@ -501,7 +538,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
         bmloop(P2BM(board, 6 * w + QUEEN), square, temp) {
             file = square & 0x7;
-            int loc = (w == 0) ? 64 - square : square;
+            int loc = (w == 0) ? 63 - square : square;
             int oldsubscore = subscore;
             subscore += queen_table[loc];
             SQPRINTF("Queen score for %c%c: %d\n", square, queen_table[loc]);
@@ -547,8 +584,8 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned) {
-                SQPRINTF("Queen hanging piece penalty for %c%c: %d\n", square, -500);
-                subscore -= 500;
+                SQPRINTF("Queen hanging piece penalty for %c%c: %d\n", square, -30);
+                subscore -= 30;
             }
 #endif
             SQPRINTF("Total value of queen on %c%c: %d\n", square, subscore - oldsubscore);
@@ -556,7 +593,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
         square = board->kingsq[w];
         file = square & 0x7;
-        int loc = (w == 0) ? 64 - square : square;
+        int loc = (w == 0) ? 63 - square : square;
         subscore += king_table[loc];
         SQPRINTF("King score for %c%c: %d\n", square, king_table[loc]);
 
@@ -811,8 +848,6 @@ static int board_score_endgame(struct board* board, unsigned char who, struct de
     undefended[1] = attacks[0] ^ (attacks[0] & attacks[1]);
 
     // Draws from insufficient material
-
-    uint64_t mask;
 
 #define ENDGAME_KNOWLEDGE
 #ifdef ENDGAME_KNOWLEDGE
