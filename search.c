@@ -51,7 +51,8 @@ int history[2][64][64];
 int max_history = 0;
 
 
-static int ttable_search(struct board* board, int depth, move_t* best, move_t* move, int * alpha, int beta);
+static int ttable_search(struct board* restrict board, int depth, move_t* restrict best,
+        move_t* restrict move, int * restrict alpha, int beta);
 static int transform_checkmate(struct board* board, union transposition* trans);
 
 static int is_checkmate(int score) {
@@ -226,29 +227,20 @@ static void sort_deltaset(struct board* board, char who, struct deltaset* set, m
     k = 0;
 
     for (i = 0; i < set->nmoves; i++) {
-        scores[i] = 0;
-
         // Found in transposition table
-        if (tablemove->piece != -1 && move_equal(*tablemove, set->moves[i]))
-            scores[i] = 60000;
-        else {
-            apply_move(board, &set->moves[i]);
-            union transposition * stored;
-            if (ttable_read(board->hash, &stored) == 0) {
-                scores[i] = -transform_checkmate(board, stored);
-            }
-            reverse_move(board, &set->moves[i]);
+        if (tablemove->piece != -1 && move_equal(*tablemove, set->moves[i])) {
+            move_copy(&temp, &set->moves[0]);
+            move_copy(&set->moves[0], &set->moves[i]);
+            move_copy(&set->moves[i], &temp);
+            k++;
+            break;
         }
-
-        if (scores[i] > 10000) k++;
     }
-
-    insertion_sort(set->moves, scores, 0, set->nmoves);
 
     int start = k;
     for (i = k; i < set->nmoves; i++) {
         if (set->moves[i].captured != -1 || 
-                (set->moves[i].piece == PAWN && set->moves[i].promotion != PAWN)) {
+                set->moves[i].promotion != set->moves[i].piece) {
             scores[k] = move_see(board, &set->moves[i]);
             move_copy(&temp, &set->moves[k]);
             move_copy(&set->moves[k++], &set->moves[i]);
@@ -256,12 +248,6 @@ static void sort_deltaset(struct board* board, char who, struct deltaset* set, m
         }
     }
     insertion_sort(set->moves, scores, start, k);
-
-    for (i = start; i < k; i++) {
-        if (scores[i] < 0) break;
-    }
-
-    k = i;
 
     // Killer moves
     for (i = k; i < set->nmoves; i++) {
@@ -319,7 +305,8 @@ static int transform_checkmate(struct board* board, union transposition* trans) 
     return trans->metadata.score;
 }
 
-static int ttable_search(struct board* board, int depth, move_t* best, move_t* move, int * alpha, int beta) {
+static int ttable_search(struct board* restrict board, int depth, move_t* restrict best, move_t* restrict move,
+                         int* restrict alpha, int beta) {
     union transposition * stored;
     int score;
     move->piece = -1;
@@ -403,13 +390,21 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
         score = transform_checkmate(board, stored);
         if (!(stored->metadata.type & EXACT) && !((stored->metadata.type & ALPHA_CUTOFF) && score <= alpha) &&
              !((stored->metadata.type & BETA_CUTOFF) && score >=beta)) {
-            generate_moves(&out1, board);
-            score = board_score(board, who, &out1, alpha, beta);
+            if (nmoves == 0) {
+                generate_moves(&out1, board);
+                score = board_score(board, who, &out1, alpha, beta);
+            } else {
+                score = board_score(board, who, &out, alpha, beta);
+            }
             if (who) score = -score;
         }
     } else {
-        generate_moves(&out1, board);
-        score = board_score(board, who, &out1, alpha, beta);
+        if (nmoves == 0) {
+            generate_moves(&out1, board);
+            score = board_score(board, who, &out1, alpha, beta);
+        } else {
+            score = board_score(board, who, &out, alpha, beta);
+        }
         if (who) score = -score;
     }
     int initial_score = score;
@@ -561,8 +556,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
                 extensions -= ONE_PLY;
                 depth += ONE_PLY;
                 extended = 1;
-            }
-            else {
+            } else {
                 if (prev) {
                     reverse_move(board, prev);
                     int see = move_see(board, prev);
@@ -589,13 +583,11 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // Terminal condition: no more moves are left, or we run out of depth
     if (depth < ONE_PLY || nmoves == 0) {
         if (nmoves == 0) {
-            initial_score = board_score(board, who, &out, alpha, beta);
-            if (who) initial_score = -initial_score;
-            ply--;
-            return initial_score;
+            score = board_score(board, who, &out, alpha, beta);
+            if (who) score = -score;
+        } else {
+            score = qsearch(board, timer, 32 * ONE_PLY, alpha, beta, who);
         }
-
-        score = qsearch(board, timer, 32 * ONE_PLY, alpha, beta, who);
         ply--;
         return score;
     }
@@ -619,7 +611,8 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     if (who) initial_score = -initial_score;
 
     // Razoring (TODO: check if a pawn is promotable)
-    if (depth < 3 * ONE_PLY && !out.check && nmoves > 1 && beta == alpha + 1 && initial_score + 600 <= alpha && tablemove.piece == -1) {
+    if (depth < 3 * ONE_PLY && !out.check && nmoves > 1 && beta == alpha + 1
+            && initial_score + 600 <= alpha && tablemove.piece == -1) {
         score = qsearch(board, timer, 32 * ONE_PLY, alpha, beta, who);
         if (score < alpha - 700) {
             ply--;
@@ -791,64 +784,17 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
 
     timer_start(timer);
 
-    if ((flags & FLAGS_USE_OPENING_TABLE) &&
-            opening_table_read(board->hash, &best) == 0) {
+    if (!infinite && ((flags & FLAGS_USE_OPENING_TABLE) &&
+            opening_table_read(board->hash, &best) == 0)) {
         fprintf(stderr, "Applying opening...\n");
-        apply_move(board, &best);
-        char buffer[8];
-        move_to_algebraic(board, buffer, &best);
         out_of_time = 0;
         ply = 0;
-        // Analyze this position so that when we leave the opening,
-        // we have some entries in the transposition table
-        if (infinite) {
-            for (d = 6 * ONE_PLY; d < 40 * ONE_PLY; d += ONE_PLY) {
-                s = search(board, timer, &temp, NULL, d, alpha, beta, 3 * ONE_PLY, 0 /* null-mode */, 1 - who);
-                if (out_of_time) break;
-                if (flags & FLAGS_UCI_MODE) {
-                    printf("info depth %d ", d / ONE_PLY);
-                    printf("score ");
-                    if (is_checkmate(s)) {
-                        if (s > 0)
-                            printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
-                        else
-                            printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
-                    }
-                    else {
-                        printf("cp %d ", s);
-                    }
-                    printf("time %lu pv %s", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
-                    print_pv(board, d / ONE_PLY);
-                    printf("\n");
-
-                }
-            }
-        } else {
-            s = search(board, timer, &temp, NULL, 6 * ONE_PLY, alpha, beta, 3 * ONE_PLY, 0 /* null-mode */, 1 - who);
-            if (flags & FLAGS_UCI_MODE) {
-                printf("info depth %d ", d / 10);
-                printf("score ");
-                if (is_checkmate(s)) {
-                    if (s > 0)
-                        printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
-                    else
-                        printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
-                }
-                else {
-                    printf("cp %d ", s);
-                }
-                printf("time %lu pv %s", (clock() - start) * 1000 / CLOCKS_PER_SEC, buffer);
-                print_pv(board, d / ONE_PLY);
-                printf("\n");
-            }
-        }
-        reverse_move(board, &best);
     } else {
         move_t temp;
         int maxdepth;
 
         if (flags & FLAGS_DYNAMIC_DEPTH) {
-            maxdepth = 40 * ONE_PLY;
+            maxdepth = 100 * ONE_PLY;
         } else {
             maxdepth = 10 * ONE_PLY;
         }
@@ -859,7 +805,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
         prev_score[who] = s;
         temp = best;
         // Iterative deepening
-        for ( d = 6 * ONE_PLY; d < maxdepth; d += ONE_PLY) {
+        for (d = 6 * ONE_PLY; d < maxdepth; d += ONE_PLY) {
             // Aspirated search: we hope that the score is between alpha and beta.
             // If so, then we have greatly increased search speed.
             // If not, we have to restart search
@@ -870,9 +816,9 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
             while (1) {
                 ply = 0;
                 s = search(board, timer, &best, NULL, d, alpha, beta, 5 * ONE_PLY, 0 /* null-mode */, who);
-                if (out_of_time) {
+                if (out_of_time)
                     break;
-                }
+
                 if (s <= alpha) {
                     alpha = alpha - changea;
                     changea *= 4;
@@ -953,8 +899,10 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     move_to_calgebraic(board, buffer, &best);
 
     fprintf(stderr, "Best scoring move is %s: %.2f\n", buffer, s/100.0);
-    fprintf(stderr, "Searched %d moves (%d main branches), #alpha: %d, #beta: %d, shorts: %d, depth: %d, TT hits: %.5f, Eval hits: %.5f, total table usage: %d\n",
-            branches, main_branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d / ONE_PLY, tt_hits/((float) tt_tot), evaluation_cache_hits / ((float) evaluation_cache_calls), ttable_stored_count);
+    fprintf(stderr, "Searched %d moves (%d main branches), #alpha: %d, #beta: %d, "
+                    "shorts: %d, depth: %d, TT hits: %.5f, Eval hits: %.5f, total table usage: %d\n",
+            branches, main_branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d / ONE_PLY,
+            tt_hits/((float) tt_tot), evaluation_cache_hits / ((float) evaluation_cache_calls), ttable_stored_count);
     return best;
 }
 

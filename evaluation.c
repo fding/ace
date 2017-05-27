@@ -115,6 +115,8 @@ int board_score(struct board* board, unsigned char who, struct deltaset* mvs, in
         return score;
     }
 
+    score = (1 - 2 * who) * 8;
+
     int nmoves = mvs->nmoves;
     if (nmoves == 0 && mvs->check) {
         if (who)
