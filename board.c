@@ -11,6 +11,8 @@
  * UTILITY CODE
  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * */
 
+const int sorted_pieces[] = {KING, QUEEN, ROOK, KNIGHT, BISHOP, PAWN};
+
 const char* piece_names = "PRNBQKprnbqk";
 
 void board_init(struct board* out) {
@@ -361,6 +363,7 @@ static void deltaset_add_move(struct board* board, side_t who, struct deltaset *
     int square2;
     mask1 = 1ull << square1;
     int i = out->nmoves;
+    int j;
     int k;
     bmloop(attacks, square2, temp) {
         mask2 = 1ull << square2;
@@ -371,7 +374,8 @@ static void deltaset_add_move(struct board* board, side_t who, struct deltaset *
                 continue;
         }
         if (piece == PAWN && (mask2 & (RANK1 | RANK8))) {
-            for (k = ROOK; k < KING; k++) {
+            for (j = 1; j < 5; j++) {
+                k = sorted_pieces[j];
                 out->moves[i].misc = 0;
                 out->moves[i].promotion = k;
                 out->moves[i].piece = piece;

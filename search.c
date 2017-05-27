@@ -26,6 +26,7 @@ int alpha_cutoff_count = 0;
 int beta_cutoff_count = 0;
 int short_circuit_count = 0;
 int branches = 0;
+int main_branches = 0;
 
 extern int evaluation_cache_calls;
 extern int evaluation_cache_hits;
@@ -34,6 +35,7 @@ extern int evaluation_cache_hits;
 
 int ply;
 int out_of_time = 0;
+int ttable_stored_count = 0;
 volatile int signal_stop = 0;
 
 int material_table[6] = {100, 500, 300, 300, 900, 30000};
@@ -66,6 +68,7 @@ static void ttable_update_with_hash(int loc, union transposition * update, int c
             *entry = *update;
         } else {
             if (!secondary_entry->metadata.type) {
+                ttable_stored_count++;
                 *secondary_entry = *update;
                 return;
             }
@@ -91,6 +94,7 @@ static void ttable_update_with_hash(int loc, union transposition * update, int c
             }
         } else {
             *entry = *update;
+            ttable_stored_count++;
         }
     }
 }
@@ -504,7 +508,10 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     if (ply != 0) {
         alpha = MAX(alpha, -CHECKMATE + board->nmoves);
         beta = MIN(beta, CHECKMATE - board->nmoves - 1);
-        if (alpha >= beta) return alpha;
+        if (alpha >= beta) {
+            short_circuit_count++;
+            return alpha;
+        }
     }
 
     struct deltaset out;
@@ -516,6 +523,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     char pvariation = 1;
     int type = ALPHA_CUTOFF;
     branches += 1;
+    main_branches += 1;
 
     // Mark it as invalid, in case we return prematurely (due to time limit)
     best->piece = -1; 
@@ -523,6 +531,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // Detect cycles, which result in a drawn position
     for (i = 0; i < ply; i++) {
         if (board->hash == seen[i]) {
+            short_circuit_count++;
             return 0;
         }
     }
@@ -602,6 +611,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     int res = ttable_search(board, depth, best, &tablemove, &alpha, beta);
     if (res == 0) {
         ply--;
+        short_circuit_count++;
         return alpha;
     }
 
@@ -631,6 +641,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             ply--;
             board_flip_side(board, old_enpassant);
             board->enpassant = old_enpassant;
+            short_circuit_count++;
             return score;
         } else {
             // Mate threat extension: if not doing anything allows opponents to checkmate us,
@@ -756,6 +767,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     beta_cutoff_count = 0;
     short_circuit_count = 0;
     branches = 0;
+    main_branches = 0;
 
     alpha = -INFINITY;
     beta = INFINITY;
@@ -941,8 +953,8 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     move_to_calgebraic(board, buffer, &best);
 
     fprintf(stderr, "Best scoring move is %s: %.2f\n", buffer, s/100.0);
-    fprintf(stderr, "Searched %d moves, #alpha: %d, #beta: %d, shorts: %d, depth: %d, TT hits: %.5f, Eval hits: %.5f\n",
-            branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d - 2 * ONE_PLY, tt_hits/((float) tt_tot), evaluation_cache_hits / ((float) evaluation_cache_calls));
+    fprintf(stderr, "Searched %d moves (%d main branches), #alpha: %d, #beta: %d, shorts: %d, depth: %d, TT hits: %.5f, Eval hits: %.5f, total table usage: %d\n",
+            branches, main_branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d / ONE_PLY, tt_hits/((float) tt_tot), evaluation_cache_hits / ((float) evaluation_cache_calls), ttable_stored_count);
     return best;
 }
 

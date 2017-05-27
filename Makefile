@@ -50,7 +50,7 @@ openings.acebase: init openings.txt
 	./init openings.txt
 
 ace-uci: libace.a ace_uci.c
-	$(CC) -L. -g ace_uci.c -lace -o ace-uci -pthread
+	$(CC) $(CFLAGS) ace_uci.c -lace -o ace-uci -pthread
 
 chess: libace.a main.c openings.acebase
 	$(CC) $(CFLAGS) main.c -lace -o chess

@@ -17,6 +17,7 @@ struct timec {
 sem_t available_threads;
 pthread_t search_thread;
 int board_initialized = 0;
+int debug_mode = 0;
 
 void * launch_search_thread(void * argument) {
     struct timec* arg = (struct timec *) argument;
@@ -38,10 +39,10 @@ void * launch_ponder_thread(void * argument) {
     return NULL;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     setbuf(stdout, NULL);
     setbuf(stdin, NULL);
-    char *buffer = malloc(4046);
+    char *buffer = malloc(4096);
     assert(buffer);
     sem_init(&available_threads, 0, 1);
     size_t n;

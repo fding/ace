@@ -165,7 +165,7 @@ void initialize_endgame_tables() {
 
 // Endgame behaves very differently, so we have a separate scoring function
 int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs) {
-    int file = 0;
+    int file = 0, rank = 0;
 
     int score = 0;
     uint64_t temp;
@@ -308,7 +308,14 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
     int blackmaterial = material_for_player_endgame(board, 1);
     struct pawn_structure* pstruct;
     pstruct = evaluate_pawns(board);
-    score += whitematerial - blackmaterial;
+    float factor = 1;
+    if (blackmaterial + whitematerial < 400)
+        factor = 3;
+    if (blackmaterial + whitematerial < 1000)
+        factor = 2;
+    if (blackmaterial + whitematerial < 1600)
+        factor = 1.5;
+    score += (int) ((whitematerial - blackmaterial) * factor);
     DPRINTF("Material score: %d\n", whitematerial - blackmaterial);
     score += pstruct->score_eg;
     DPRINTF("Pawn score: %d\n", pstruct->score_eg);
@@ -372,16 +379,37 @@ int board_score_endgame(struct board* board, unsigned char who, struct deltaset*
 
     bmloop(P2BM(board, WHITEROOK), square, temp) {
         file = square & 0x7;
+        rank = square / 8;
 
         // Doubled rooks are very powerful.
         if ((AFILE << file) & (majors[0] ^ (1ull << square)))
             score += 5;
+        // Rook should be behind own pawns
+        if ((AFILE << file) & (pawns[0])) {
+          int pawn_sq = (AFILE << file) & pawns[0];
+          if (pawn_sq / 8 > rank) {
+            score += 20;
+          } else {
+            score -= 30;
+          }
+        }
     }
+
     bmloop(P2BM(board, BLACKROOK), square, temp) {
         file = square & 0x7;
+        rank = square / 8;
 
         if ((AFILE << file) & (majors[1] ^ (1ull << square)))
             score -= 5;
+        // Rook should be behind own pawns
+        if ((AFILE << file) & (pawns[1])) {
+          int pawn_sq = (AFILE << file) & pawns[1];
+          if (pawn_sq / 8 < rank) {
+            score -= 20;
+          } else {
+            score += 30;
+          }
+        }
     }
     bmloop(P2BM(board, WHITEQUEEN), square, temp) {
         file = square & 0x7;
