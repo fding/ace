@@ -21,8 +21,8 @@
     for (square=LSBINDEX(board), temp=board; temp; temp&=(temp-1), square=LSBINDEX(temp))
 #define P2BM(board, piece) (*((*(board)->pieces)+(piece)))
 
-#define CHECKMATE 30000
-#define INFINITY 31000
+#define CHECKMATE 24000
+#define INFINITY 25000
 
 
 #define CASTLE_PRIV_WQ 0x8

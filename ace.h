@@ -1,6 +1,9 @@
 /* The ACE Chess Engine (A Chess Engine)
  */
 #ifndef ACE_H
+
+#include <assert.h>
+
 #define ACE_H
 
 #define FLAGS_DYNAMIC_DEPTH 1
@@ -23,6 +26,7 @@ int engine_reset_hashmap(int hashsize);
 
 
 #define ACE_PARAM_CONTEMPT 1
+#define ACE_PARAM_DEBUG 2
 int engine_set_param(int name, int value);
 
 
@@ -42,5 +46,7 @@ int engine_score();
 int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc, int binc, int moves_to_go);
 
 void engine_perft(int initial, int depth, side_t who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles);
+
+extern int debug_mode;
 
 #endif

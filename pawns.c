@@ -76,7 +76,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             count += 1;
             rank = square / 8;
             file = square & 0x7;
-            int loc = (who == 0) ? (56 - square + file + file) : square;
+            int loc = (who == 0) ? (63 - square) : square;
             subscore += pawn_table[loc];
             DPRINTF("Pawn score on %c%c: %d\n", 'a'+file, '1'+rank, pawn_table[loc]);
             subscore_eg += pawn_table_endgame[loc];

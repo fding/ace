@@ -11,7 +11,7 @@
  *  supported by changing this header file. As a demonstration of
  *  this, geometry-h8g8.h is provided.
  */
-#include "geometry-a1a2.h"
+#include "geometry-h8g8.h"
 
 /*----------------------------------------------------------------------+
  |      Functions                                                       |
