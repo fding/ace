@@ -222,6 +222,7 @@ int reverse_move(struct board* board, move_t* move);
 void generate_moves(struct deltaset* mvs, struct board* board);
 void generate_captures(struct deltaset* mvs, struct board* board);
 int is_valid_move(struct board* board, side_t who, struct delta move);
+int is_pseudo_valid_move(struct board* board, side_t who, struct delta move);
 uint64_t board_flip_side(struct board* board, uint64_t enpassant);
 
 /* Board properties */

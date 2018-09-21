@@ -124,6 +124,16 @@ char* board_init_from_fen(struct board* out, char* position) {
     out->kingsq[0] = LSBINDEX(out->pieces[0][KING]);
     out->kingsq[1] = LSBINDEX(out->pieces[1][KING]);
 
+    for (square = 0; square < 64; square++) {
+        char piece = get_piece_on_square(out, square);
+        if (piece != -1) {
+            out->hash ^= square_hash_codes[square][piece];
+            if (piece == WHITEPAWN || piece == BLACKPAWN) {
+                out->pawn_hash ^= square_hash_codes[square][piece];
+            }
+        }
+    }
+
     if (*position == 0) return NULL;
 
     if (*(++position) != ' ') return NULL;
@@ -193,16 +203,6 @@ char* board_init_from_fen(struct board* out, char* position) {
 
     out->nmovesnocapture = a;
     out->nmoves = 2 * (b - 1) + out->who;
-
-    for (square = 0; square < 64; square++) {
-        char piece = get_piece_on_square(out, square);
-        if (piece != -1) {
-            out->hash ^= square_hash_codes[square][piece];
-            if (piece == WHITEPAWN || piece == BLACKPAWN) {
-                out->pawn_hash ^= square_hash_codes[square][piece];
-            }
-        }
-    }
 
     while (*position && *(position++) != ' ');
     position++;

@@ -149,6 +149,22 @@ int is_valid_move(struct board* board, side_t who, struct delta move) {
     return 0;
 }
 
+int is_pseudo_valid_move(struct board* board, side_t who, struct delta move) {
+    if (!((1ull << move.square1) & board->pieces[who][move.piece]))
+        return 0;
+    if (move.captured != -1) {
+        uint64_t sq2mask = 1ull << move.square2;
+        if (board->enpassant != 1 && move.piece == PAWN) {
+            if (sq2mask == (board->enpassant << 8) ||
+                    sq2mask == (board->enpassant >> 8))
+            return 1;
+        }
+        if (!(board->pieces[1-who][move.captured] & sq2mask))
+            return 0;
+    }
+    return 1;
+}
+
 uint64_t board_flip_side(struct board* board, uint64_t enpassant) {
     uint64_t old_enpassant = board->enpassant;
     if (old_enpassant != 1) {

@@ -51,7 +51,7 @@ int history[2][64][64];
 int max_history = 0;
 
 
-static int ttable_search(struct board* restrict board, int depth, move_t* restrict best,
+static int ttable_search(struct board* restrict board, int who, int depth, move_t* restrict best,
         move_t* restrict move, int * restrict alpha, int beta);
 static int transform_checkmate(struct board* board, union transposition* trans);
 
@@ -165,6 +165,10 @@ static void insertion_sort(move_t* moves, int* scores, int start, int end) {
     }
 }
 
+int no_recap_move_see(struct board* board, move_t* move) {
+    return material_table[move->captured] + material_table[move->promotion] - material_table[move->piece];
+}
+
 // Static exchange evaluation for a move
 int move_see(struct board* board, move_t* move) {
     uint64_t white_occupancy = board_occupancy(board, 0);
@@ -183,8 +187,8 @@ int move_see(struct board* board, move_t* move) {
         is_attacked(board, 0, occupancy, 1, move->square2);
     int piece = move->piece;
 
-    if (move->captured == -1)
-        gain[d] = material_table[move->captured];
+    if (move->captured != -1)
+        gain[d] = material_table[move->captured] + material_table[move->promotion] - material_table[move->piece];
     else
         gain[d] = material_table[move->promotion] - material_table[move->piece];
 
@@ -305,7 +309,7 @@ static int transform_checkmate(struct board* board, union transposition* trans) 
     return trans->metadata.score;
 }
 
-static int ttable_search(struct board* restrict board, int depth, move_t* restrict best, move_t* restrict move,
+static int ttable_search(struct board* restrict board, int who, int depth, move_t* restrict best, move_t* restrict move,
                          int* restrict alpha, int beta) {
     union transposition * stored;
     int score;
@@ -315,9 +319,11 @@ static int ttable_search(struct board* restrict board, int depth, move_t* restri
         score = transform_checkmate(board, stored);
         if (stored->metadata.depth >= depth / ONE_PLY) {
             if ((stored->metadata.type & EXACT)) {
-                move_copy(best, &stored->move);
-                *alpha = score;
-                return 0;
+                if (is_pseudo_valid_move(board, who, stored->move)) {
+                    move_copy(best, &stored->move);
+                    *alpha = score;
+                    return 0;
+                }
             } 
             // The stored score is only an upper bound,
             // so we can only terminate if score is less than the current lower bound
@@ -333,8 +339,10 @@ static int ttable_search(struct board* restrict board, int depth, move_t* restri
             }
         } 
         if (stored->metadata.type & MOVESTORED) {
-            move_copy(move, &stored->move);
-            return 1;
+            if (is_pseudo_valid_move(board, who, stored->move)) {
+                move_copy(move, &stored->move);
+                return 1;
+            }
         }
     }
     return -1;
@@ -428,7 +436,7 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     // Even if we can't return the score due to lack of depth,
     // the stored move is probably good, so we can improve the pruning
     tablemove.piece = -1;
-    int res = ttable_search(board, depth, &best, &tablemove, &alpha, beta);
+    int res = ttable_search(board, who, depth, &best, &tablemove, &alpha, beta);
     if (res == 0) {
         return alpha;
     }
@@ -443,7 +451,7 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
         // worse than alpha, this capture must really suck, so no need to consider it.
         // We never prune if we are in check, because that could easily result in mistaken evaluation
         if (!out.check) {
-            int see = move_see(board, &out.moves[i]);
+            int see = no_recap_move_see(board, &out.moves[i]);
             value = initial_score + see;
             if (value >= beta) {
                 alpha = value;
@@ -600,7 +608,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // and if so, return the score if possible.
     // Even if we can't return the score due to lack of depth,
     // the stored move is probably good, so we can improve the pruning
-    int res = ttable_search(board, depth, best, &tablemove, &alpha, beta);
+    int res = ttable_search(board, who, depth, best, &tablemove, &alpha, beta);
     if (res == 0) {
         ply--;
         short_circuit_count++;
@@ -738,10 +746,16 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     transposition.metadata.score = alpha;
     transposition.metadata.depth = depth / ONE_PLY;
 
-    if (best->piece != -1)
-        assert(move_equal(*best, transposition.move));
+    if (best->piece != -1) {
+        if (!move_equal(*best, transposition.move)) {
+            printf("%lxx\n", *((uint64_t *) best));
+            printf("%lxx\n", *((uint64_t *) &transposition.move));
+            assert(0);
+        }
+    }
 
-    ttable_update(board->hash, &transposition);
+    if (!nullmode)
+      ttable_update(board->hash, &transposition);
     return alpha;
 }
 
@@ -856,35 +870,6 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
                     printf("time %lu pv", (clock() - start) * 1000 / CLOCKS_PER_SEC);
                     print_pv(board, d / ONE_PLY);
                     printf("\n");
-    struct deltaset out;
-    generate_moves(&out, board);
-    move_t tablemove;
-    tablemove.piece = -1;
-    sort_deltaset(board, who, &out, &tablemove);
-    int i;
-    char buffer[8];
-    printf("Move sorting: ");
-    for (i = 0; i < out.nmoves; i++) {
-    union transposition * stored;
-            apply_move(board, &out.moves[i]);
-            int score=0;
-            int asdf=0;
-            const char* type = "Unknown";
-    if (ttable_read(board->hash, &stored) == 0) {
-        score = transform_checkmate(board, stored);
-        asdf = stored->metadata.depth;
-        if (stored->metadata.type & EXACT)
-          type = "Exact";
-        if (stored->metadata.type & ALPHA_CUTOFF)
-          type = "Lower bound";
-        if (stored->metadata.type & BETA_CUTOFF)
-          type = "Upper bound";
-    }
-            reverse_move(board, &out.moves[i]);
-      move_to_algebraic(board, buffer, &out.moves[i]);
-      printf("%s (%d at depth %d. Type=%s) ", buffer, -score, asdf, type);
-    }
-    printf("\n");
                 }
                 if (!infinite && is_checkmate(s)) {
                     break;
