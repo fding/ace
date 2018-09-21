@@ -3,6 +3,25 @@
 // All tables are from white's perspective
 // We give a bonus for all pieces the closer they move to the opposite side
 
+
+int MIDGAME_PAWN_VALUE = 100;
+int MIDGAME_KNIGHT_VALUE = 300;
+int MIDGAME_BISHOP_VALUE = 315;
+int MIDGAME_ROOK_VALUE = 490;
+int MIDGAME_QUEEN_VALUE = 880;
+int MIDGAME_BISHOP_PAIR = 46;
+
+int MIDGAME_BACKWARD_PAWN = -20;
+int MIDGAME_SUPPORTED_PAWN = 3;
+int doubled_pawn_penalty[8] = {-10, -12, -15, -18, -18, -15, -12, -10};
+int passed_pawn_table[8] = {0, 0, 0, 10, 15, 20, 50, 800};
+int isolated_pawn_penalty[8] = {-20, -25, -28, -32, -32, -28, -25, -20};
+
+int KNIGHT_OUTPOST_BONUS = 16;
+int KNIGHT_ALMOST_OUTPOST_BONUS = 8;
+
+
+
 int knight_table[64] = {
     -30, -15, -15, -15, -15, -15, -15, -30,
      -10,  -5,  0,  0,  0, 0,  -5,  -10,

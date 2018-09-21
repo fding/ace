@@ -73,11 +73,11 @@ int simplified_material_for_player(struct board* board, side_t who) {
 }
 
 int material_for_player(struct board* board, side_t who) {
-    return 100 * popcnt(board->pieces[who][PAWN]) +
-        300 * popcnt(board->pieces[who][KNIGHT]) +
-        315 * popcnt(board->pieces[who][BISHOP]) +
-        490 * popcnt(board->pieces[who][ROOK]) +
-        880 * popcnt(board->pieces[who][QUEEN]);
+    return MIDGAME_PAWN_VALUE * popcnt(board->pieces[who][PAWN]) +
+        MIDGAME_KNIGHT_VALUE * popcnt(board->pieces[who][KNIGHT]) +
+        MIDGAME_BISHOP_VALUE * popcnt(board->pieces[who][BISHOP]) +
+        MIDGAME_ROOK_VALUE * popcnt(board->pieces[who][ROOK]) +
+        MIDGAME_QUEEN_VALUE * popcnt(board->pieces[who][QUEEN]);
 }
 
 /* Scoring the board:
@@ -240,10 +240,10 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
             SQPRINTF("Sided knight position score for %c%c: %d\n", square, knight_table[loc]);
             // Outposts are good
             if ((1ull << square) & outposts[w]) {
-                subscore += 16;
+                subscore += KNIGHT_OUTPOST_BONUS;
                 SQPRINTF("Sided knight outpost score for %c%c: %d\n", square, 31);
             } else if ((1ull << square) & holes[w]) {
-                subscore += 8;
+                subscore += KNIGHT_ALMOST_OUTPOST_BONUS;
                 SQPRINTF("Sided knight outpost score for %c%c: %d\n", square, 21);
             }
             uint64_t attack_mask = attack_set_knight(square, pieces[w], pieces[1 - w]);
@@ -256,12 +256,12 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
             // Hanging piece penalty
             if (!(attacks[w] & (1ull << square))) {
-                subscore -= 2;
-                SQPRINTF("Sided knight hanging piece penalty for %c%c: %d\n", square, -2);
+                subscore -= 5;
+                SQPRINTF("Sided knight hanging piece penalty for %c%c: %d\n", square, -5);
             }
             if ((1ull << square) & undefended[w]) {
-                subscore -= 5;
-                SQPRINTF("Sided knight undefended piece penalty for %c%c: %d\n", square, -5);
+                subscore -= 10;
+                SQPRINTF("Sided knight undefended piece penalty for %c%c: %d\n", square, -10);
             }
             if ((1ull << square) & pawn_attacks[1 - w]) {
                 subscore -= 5;
@@ -272,7 +272,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
             // Pinned pieces aren't great, especially knights
             if ((1ull << square) & mvs->pinned) {
                 subscore -= 15;
-                SQPRINTF("Sided knight pinned penalty for %c%c: %d\n", square, -15);
+                SQPRINTF("Sided knight pinned penalty for %c%c: %d\n", square, -35);
             }
 #endif
             SQPRINTF("Total value of knight on %c%c: %d\n", square, subscore - oldsubscore);
@@ -307,12 +307,12 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
             // Hanging piece penalty
             if (!(attacks[w] & (1ull << square))) {
-                subscore -= 2;
-                SQPRINTF("Sided bishop hanging penalty for %c%c: %d\n", square, -2);
-            }
-            if ((1ull << square) & undefended[w]) {
                 subscore -= 5;
                 SQPRINTF("Sided bishop hanging penalty for %c%c: %d\n", square, -5);
+            }
+            if ((1ull << square) & undefended[w]) {
+                subscore -= 10;
+                SQPRINTF("Sided bishop hanging penalty for %c%c: %d\n", square, -10);
             }
             if ((1ull << square) & pawn_attacks[1 - w]) {
                 subscore -= 5;
@@ -336,7 +336,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
             }
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned) {
-                SQPRINTF("Sided bishop pinned for %c%c: %d\n", square, -10);
+                SQPRINTF("Sided bishop pinned for %c%c: %d\n", square, -30);
                 subscore -= 10;
             }
 #endif
@@ -345,8 +345,8 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
         // Bishop pairs are very valuable
         // In the endgame, 2 bishops can checkmate a king,
         // whereas 2 knights can't
-        subscore += (count == 2) * 46;
-        DPRINTF("Sided double bishop: %d\n", (count==2) * 46);
+        subscore += (count == 2) * MIDGAME_BISHOP_PAIR;
+        DPRINTF("Sided double bishop: %d\n", (count==2) * MIDGAME_BISHOP_PAIR);
 
         bmloop(P2BM(board, 6 * w + ROOK), square, temp) {
             file = square & 0x7;
@@ -393,11 +393,11 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
             // Hanging piece penalty
             if (!(attacks[w] & (1ull << square))) {
-                SQPRINTF("Sided rook hanging penalty for %c%c: %d\n", square, -2);
-                subscore -= 2;
-            } if ((1ull << square) & undefended[w]) {
                 SQPRINTF("Sided rook hanging penalty for %c%c: %d\n", square, -5);
                 subscore -= 5;
+            } if ((1ull << square) & undefended[w]) {
+                SQPRINTF("Sided rook undefended penalty for %c%c: %d\n", square, -10);
+                subscore -= 10;
             }
             if ((1ull << square) & pawn_attacks[1 - w]) {
                 SQPRINTF("Sided rook hanging penalty for %c%c: %d\n", square, -5);
@@ -406,7 +406,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned) {
-                SQPRINTF("Sided rook pinned penalty for %c%c: %d\n", square, -10);
+                SQPRINTF("Sided rook pinned penalty for %c%c: %d\n", square, -30);
                 subscore -= 10;
             }
 #endif
@@ -449,11 +449,11 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 
             // Hanging piece penalty
             if (!(attacks[w] & (1ull << square))) {
-                SQPRINTF("Queen hanging piece penalty for %c%c: %d\n", square, -2);
-                subscore -= 2;
-            } if ((1ull << square) & undefended[w]) {
                 SQPRINTF("Queen hanging piece penalty for %c%c: %d\n", square, -5);
                 subscore -= 5;
+            } if ((1ull << square) & undefended[w]) {
+                SQPRINTF("Queen hanging piece penalty for %c%c: %d\n", square, -10);
+                subscore -= 10;
             }
             if ((1ull << square) & pawn_attacks[1 - w]) {
                 SQPRINTF("Queen hanging piece penalty for %c%c: %d\n", square, -5);
@@ -463,7 +463,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
 #ifdef PINNED
             if ((1ull << square) & mvs->pinned) {
                 SQPRINTF("Queen hanging piece penalty for %c%c: %d\n", square, -30);
-                subscore -= 30;
+                subscore -= 50;
             }
 #endif
             SQPRINTF("Total value of queen on %c%c: %d\n", square, subscore - oldsubscore);
@@ -537,7 +537,7 @@ static int board_score_middlegame(struct board* board, unsigned char who, struct
         else score += subscore;
     }
 
-    score += ((board->cancastle & 12) != 0) * 10 - ((board->cancastle & 3) != 0 ) * 10;
+    score += ((board->cancastle & 12) != 0) * 20 - ((board->cancastle & 3) != 0 ) * 20;
     DPRINTF("Can castle score: %d\n", ((board->cancastle & 12) != 0) * 10 - ((board->cancastle & 3) != 0 ) * 10);
     return score;
 }
