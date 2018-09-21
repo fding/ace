@@ -95,15 +95,15 @@ struct board {
  * DO NOT CHANGE UNLESS YOU KNOW WHAT YOU ARE DOING.
  */
 struct delta {
-    unsigned char square1;
-    unsigned char square2;
-    char piece;
-    char captured;
+    unsigned char square1; // Needs 6 bits
+    unsigned char square2; // Needs 6 bits
+    char piece; // Needs 3 bits
+    char captured; // Needs 3 bits
 
-    char promotion;
-    char misc;
-    char cancastle;
-    char enpassant;
+    char promotion; // Needs 2 bits
+    char misc; // Needs 8 bits, only 2 bits need to be stored
+    char cancastle; // Needs 4 bits
+    char enpassant; // Needs 3 bits, maybe 4
     uint64_t hupdate;
 };
 
@@ -158,7 +158,7 @@ typedef struct delta move_t;
  * 2n is always at most 29, so the probability of collision is small.
  */
 union transposition {
-    move_t move;
+    move_t move; // Currently 64 bits, can reduce to 32
     struct {
         unsigned char square1;
         unsigned char square2;
@@ -168,12 +168,12 @@ union transposition {
         char misc;
         int16_t score;
         // 8 byte alignment
-        uint32_t hash;
-        char type;
-        uint8_t depth;
-        int16_t age;
+        uint32_t hash; // 12 bits??
+        char type; // Needs 3 bits
+        uint8_t depth; // Needs 8 bits
+        int16_t age; // Needs 9 bits
     } metadata;
-};
+}; // Currently 128 bits
 
 struct ttable_entry {
     union transposition slot1;

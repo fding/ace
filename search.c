@@ -47,8 +47,10 @@ struct killer_slot {
 
 struct killer_slot killer[32];
 uint64_t seen[64];
+/*
 int history[2][64][64];
 int max_history = 0;
+*/
 
 
 static int ttable_search(struct board* restrict board, int who, int depth, move_t* restrict best,
@@ -270,10 +272,40 @@ static void sort_deltaset(struct board* board, char who, struct deltaset* set, m
             break;
         }
     }
+    
+    // Checks
+    start = k;
+    for (i = k; i < set->nmoves; i++) {
+        apply_move(board, &set->moves[i]);
+        uint64_t occupancy = board_occupancy(board, 0) | board_occupancy(board, 1);
+        uint64_t check_move = is_in_check(board, 1 - who, 0, occupancy);
+        reverse_move(board, &set->moves[i]);
+        if (check_move) {
+            scores[k] = move_see(board, &set->moves[i]);
+            move_copy(&temp, &set->moves[k]);
+            move_copy(&set->moves[k++], &set->moves[i]);
+            move_copy(&set->moves[i], &temp);
+        }
+    }
+    insertion_sort(set->moves, scores, start, k);
+
+    /*
+    // Pawn pushes
+    start = k;
+    for (i = k; i < set->nmoves; i++) {
+        if (set->moves[i].piece == PAWN) {
+            scores[k] = move_see(board, &set->moves[i]);
+            move_copy(&temp, &set->moves[k]);
+            move_copy(&set->moves[k++], &set->moves[i]);
+            move_copy(&set->moves[i], &temp);
+        }
+    }
+    insertion_sort(set->moves, scores, start, k);
+    */
 
     // History table
     for (i = k; i < set->nmoves; i++) {
-        scores[i] = ((history[who][set->moves[i].square1][set->moves[i].square2] << 7) >> max_history);
+        scores[i] = /*((history[who][set->moves[i].square1][set->moves[i].square2] << 7) >> max_history) + */ move_see(board, &set->moves[i]);
     }
 
     insertion_sort(set->moves, scores, k, set->nmoves);
@@ -323,6 +355,12 @@ static int ttable_search(struct board* restrict board, int who, int depth, move_
                     move_copy(best, &stored->move);
                     *alpha = score;
                     return 0;
+                } else {
+                    char buffer[8];
+                    char board_buffer[128];
+                    move_to_calgebraic(board, buffer, &stored->move);
+                    board_to_fen(board, board_buffer);
+                    fprintf(stderr, "(0) Trying to apply invalid move (%s) on board: %s\n", buffer, board_buffer);
                 }
             } 
             // The stored score is only an upper bound,
@@ -342,6 +380,13 @@ static int ttable_search(struct board* restrict board, int who, int depth, move_
             if (is_pseudo_valid_move(board, who, stored->move)) {
                 move_copy(move, &stored->move);
                 return 1;
+            } else {
+                char buffer[8];
+                char board_buffer[128];
+                move_to_calgebraic(board, buffer, &stored->move);
+                board_to_fen(board, board_buffer);
+                fprintf(stderr, "enpassant: %llx, square2: %llx, eq: %d, piece: %d\n", board->enpassant, (1ull << stored->move.square2), board->enpassant == (1ull << stored->move.square2), stored->move.piece);
+                fprintf(stderr, "(1) Trying to apply invalid move (%s) on board: %s\n", buffer, board_buffer);
             }
         }
     }
@@ -517,6 +562,8 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         }
     }
 
+    int initial_depth = depth;
+
     struct deltaset out;
     union transposition transposition;
     move_t temp;
@@ -560,31 +607,27 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
     if (extensions > 0 && !nullmode) {
         if (out.check) {
-            if (extensions > 2 * ONE_PLY) {
-                extensions -= ONE_PLY;
-                depth += ONE_PLY;
-                extended = 1;
-            } else {
                 if (prev) {
                     reverse_move(board, prev);
                     int see = move_see(board, prev);
                     apply_move(board, prev);
                     if (see >= 0) {
-                        depth += ONE_PLY + ONE_PLY/2;
-                        extensions -= ONE_PLY + ONE_PLY/2;
+                        depth += ONE_PLY;
+                        extensions -= ONE_PLY;
                         extended = 1;
-                        if (nmoves == 1) {
-                            depth += ONE_PLY/2;
-                        }
                     }
                 }
-            }
         }
-        else if (nmoves == 1) {
-            extensions -= ONE_PLY;
+        if (nmoves <= 2) {
             depth += ONE_PLY;
+            extensions -= ONE_PLY;
             extended = 1;
         }
+    }
+
+    if (!extended && (nmoves == 1)) {
+        depth += ONE_PLY;
+        extended = 1;
     }
     
     int initial_score = 0;
@@ -637,7 +680,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             (board->pieces[who][KNIGHT] | board->pieces[who][BISHOP] | board->pieces[who][ROOK] | board->pieces[who][QUEEN])) {
         uint64_t old_enpassant = board_flip_side(board, 1);
         int rdepth = depth - 3 * ONE_PLY - depth / 4;
-        score = -search(board, timer, &temp, NULL, rdepth, -beta, -beta + 1, extensions, 1, 1 - who);
+        score = -search(board, timer, &temp, NULL, rdepth, -beta, -beta + 1, 0, 1, 1 - who);
         if (score >= beta) {
             ply--;
             board_flip_side(board, old_enpassant);
@@ -647,7 +690,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         } else {
             // Mate threat extension: if not doing anything allows opponents to checkmate us,
             // we are in a potentially dangerous situation, so extend search
-            score = search(board, timer, &temp, NULL, rdepth, CHECKMATE/2 - 1, CHECKMATE/2, extensions, 1, 1 - who);
+            score = search(board, timer, &temp, NULL, rdepth, CHECKMATE/2 - 1, CHECKMATE/2, 0, 1, 1 - who);
             board_flip_side(board, old_enpassant);
             board->enpassant = old_enpassant;
             if (score > CHECKMATE/2) {
@@ -666,13 +709,17 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     sort_deltaset(board, who, &out, &tablemove);
 
     int allow_prune = !out.check && (nmoves > 6) && !extended;
+    int checked_one_capture = 0;
     for (i = 0; i < out.nmoves; i++) {
         move_t * move = &out.moves[i];
         if (out.moves[i].captured != -1 && depth <= 2 * ONE_PLY && allow_prune) {
             // Don't consider bad captures
             // TODO: what happens if we end up skipping all legal moves? Should it trigger alpha cutoff?
-            if (move_see(board, &out.moves[i]) < 0)
-                continue;
+            if (move_see(board, &out.moves[i]) < 0) {
+                if (checked_one_capture)
+                    continue;
+                checked_one_capture = 1;
+            }
         }
         // Futility pruning
         // If we reach a frontier node, we don't need to consider non-winning captures and non-checks
@@ -696,10 +743,15 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
         apply_move(board, move);
         int skip_deep_search = 0;
-        int allow_lmr = allow_prune && depth >= 3 * ONE_PLY && ((i > 2 && beta == alpha + 1));// || (i > 4 && i >= nchecks && out.moves[i].captured == -1
+        int allow_lmr = allow_prune && depth >= 2 * ONE_PLY && ((i > 2 && beta == alpha + 1));// || (i > 4 && i >= nchecks && out.moves[i].captured == -1
                     //&& out.moves[i].promotion == out.moves[i].piece));
         if (allow_lmr) {
-            score = -search(board, timer, &temp, move, depth - 2 * ONE_PLY, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
+            if (i > 8)
+                score = -search(board, timer, &temp, move, depth - 6 * ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
+            if (i > 4)
+                score = -search(board, timer, &temp, move, depth - 4 * ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
+            else
+                score = -search(board, timer, &temp, move, depth - 2 * ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
             if (score <= alpha) {
                 skip_deep_search = 1;
                 alpha_cutoff_count += 1;
@@ -710,7 +762,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             if (pvariation || ply == 1) {
                 score = -search(board, timer, &temp, move, depth - ONE_PLY, -beta, -alpha, extensions, nullmode, 1 - who);
             } else {
-                score = -search(board, timer, &temp, move, depth - ONE_PLY, -alpha - 1, -alpha, extensions, nullmode, 1 - who);
+                score = -search(board, timer, &temp, move, depth - ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
                 if (!out_of_time && score >= alpha && score < beta)
                     score = -search(board, timer, &temp, move, depth - ONE_PLY, -beta, -alpha, extensions, nullmode, 1 - who);
             }
@@ -725,9 +777,11 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             move_copy(&transposition.move, move);
             type = EXACT | MOVESTORED;
             pvariation = 0;
+            /*
             history[who][move->square1][move->square2] += depth / ONE_PLY;
             while (history[who][move->square1][move->square2] > (1 << max_history))
                 max_history++;
+                */
         }
         if (beta <= alpha) {
             beta_cutoff_count += 1;
@@ -779,6 +833,10 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     alpha = -INFINITY;
     beta = INFINITY;
 
+    tt_hits = 0;
+    tt_tot = 0;
+
+    /*
     for (int w = 0; w < 2; w++) {
         for (int sq1 = 0; sq1 < 64; sq1++) {
             for (int sq2 = 0; sq2 < 64; sq2++) {
@@ -789,9 +847,10 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     max_history -= 3;
     if (max_history < 0)
         max_history = 0;
+    */
 
-    static int leeway_table[32] = {40, 30, 20, 10, 10, 10, 10, 10,
-        10, 10, 10, 10, 10, 10, 10, 10,
+    static int leeway_table[32] = {200, 100, 80, 80, 50, 40, 40, 40,
+        40, 40, 40, 40, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
     };
@@ -820,6 +879,8 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
         temp = best;
         // Iterative deepening
         for (d = 6 * ONE_PLY; d < maxdepth; d += ONE_PLY) {
+    tt_hits = 0;
+    tt_tot = 0;
             // Aspirated search: we hope that the score is between alpha and beta.
             // If so, then we have greatly increased search speed.
             // If not, we have to restart search

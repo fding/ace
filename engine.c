@@ -194,7 +194,7 @@ char* engine_new_game_from_position(char* position) {
 void engine_clear_state() {
     memset(position_count_table, 0, sizeof(position_count_table));
     memset(ttable, 0, hashmapsize * sizeof(struct ttable_entry));
-    memset(history, 0, 2 * 64 * 64 * sizeof(int));
+    // memset(history, 0, 2 * 64 * 64 * sizeof(int));
 }
 
 void engine_print_moves() {
