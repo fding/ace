@@ -169,11 +169,7 @@ void initialize_endgame_tables() {
 
 // Endgame behaves very differently, so we have a separate scoring function
 int board_score_endgame(struct board* board, unsigned char who, struct deltaset* mvs) {
-    int file = 0, rank = 0;
-
     int score = 0;
-    uint64_t temp;
-    int square, count;
 
 #define EG_NONE 0
 #define EG_KPKP 1
@@ -369,7 +365,7 @@ int board_score_eg_positional(struct board* board, unsigned char who, struct del
 
     int score = 0;
     uint64_t temp;
-    int square, count;
+    int square;
 
     uint64_t pawns[2], minors[2], majors[2], kings[2];
     pawns[0] = P2BM(board, WHITEPAWN);

@@ -1,5 +1,5 @@
 CC=clang
-CFLAGS=-L. -Ofast  -Wall -Wno-char-subscripts -mpopcnt -mlzcnt -no-pie
+CFLAGS=-Ofast  -Wall -Wno-char-subscripts -mpopcnt -mlzcnt
 
 all: CFLAGS+= -fprofile-instr-use=code.profdata
 all: libace.a perft benchmark ace-uci score score_debug
@@ -52,19 +52,19 @@ clean:
 	rm -f *.o libace.a
 
 score: libace.a score.c
-	$(CC) $(CFLAGS) score.c -lace -o score
+	$(CC) $(CFLAGS) score.c -L. -lace -o score
 
 score_debug: libace_debug.a score.c
-	$(CC) $(CFLAGS) -D DEBUG score.c -lace_debug -o score_debug
+	$(CC) $(CFLAGS) -D DEBUG score.c -L. -lace_debug -o score_debug
 
 ace-uci: libace.a ace_uci.c
-	$(CC) $(CFLAGS) ace_uci.c -lace -o ace-uci -pthread
+	$(CC) $(CFLAGS) ace_uci.c -L. -lace -o ace-uci -pthread
 
 perft: perft.c libace.a
-	$(CC) $(CFLAGS) perft.c -lace -o perft
+	$(CC) $(CFLAGS) perft.c -L. -lace -o perft
 
 benchmark: benchmark.c libace.a
-	$(CC) $(CFLAGS) benchmark.c -lace -o benchmark
+	$(CC) $(CFLAGS) benchmark.c -L. -lace -o benchmark
 
 test: test.py perft chess
 	python test.py

@@ -267,7 +267,6 @@ static void sorted_move_iterator_score(struct sorted_move_iterator* move_iter, s
         apply_move(board, &move_iter->moves[i]);
         uint64_t occupancy = board_occupancy(board, 0) | board_occupancy(board, 1);
         uint64_t check_move = is_in_check(board, 1 - who, 0, occupancy);
-        move_t best;
         reverse_move(board, &move_iter->moves[i]);
         int history_score = history[who][move_iter->moves[i].square1][move_iter->moves[i].square2];
         history_score = MIN(history_score, PHASEGAP);
@@ -346,7 +345,6 @@ static int sorted_move_iterator_next(struct sorted_move_iterator* move_iter, str
 }
 
 static void sorted_move_iterator_init(struct sorted_move_iterator* move_iter, struct board* board, char who, struct deltaset* set, move_t * tablemove) {
-    int i, k;
     move_iter->idx = -1;
     move_iter->move = NULL;
     move_iter->moves = set->moves;
@@ -473,7 +471,6 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
 
     move_t tablemove;
     tablemove.piece = -1;
-    move_t best;
 
     int nmoves = 0;
     generate_qsearch_moves(&out, board);
@@ -604,8 +601,6 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             return alpha;
         }
     }
-
-    int initial_depth = depth;
 
     struct deltaset out;
     union transposition transposition;
@@ -865,8 +860,8 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
     if (best->piece != -1) {
         if (!move_equal(*best, transposition.move)) {
-            printf("%lxx\n", *((uint64_t *) best));
-            printf("%lxx\n", *((uint64_t *) &transposition.move));
+            printf("%llx\n", *((uint64_t *) best));
+            printf("%llx\n", *((uint64_t *) &transposition.move));
             assert(0);
         }
     }

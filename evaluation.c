@@ -208,7 +208,7 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
     DPRINTF("Scoring board\n");
     int score = 0;
     uint64_t temp;
-    int square, count;
+    int square;
     int rank, file;
 
     uint64_t pawns[2], bishops[2], rooks[2], queens[2],
@@ -216,7 +216,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
 
     pawns[0] = P2BM(board, WHITEPAWN);
     pawns[1] = P2BM(board, BLACKPAWN);
-    int npawns = popcnt(pawns[0] | pawns[1]);
     bishops[0] = P2BM(board, WHITEBISHOP);
     bishops[1] = P2BM(board, BLACKBISHOP);
     rooks[0] = P2BM(board, WHITEROOK);
@@ -284,7 +283,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
         // king_zone |= forward_king_zone;
 
         bmloop(P2BM(board, 6 * w + KNIGHT), square, temp) {
-            int oldsubscore = subscore;
             // Outposts are good
             if ((1ull << square) & outposts[w]) {
                 subscore += KNIGHT_OUTPOST_BONUS;
@@ -328,7 +326,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
                 SQPRINTF("  Sided knight pinned penalty for %c%c: %d\n", square, -12);
             }
 #endif
-            SQPRINTF("Total value of knight on %c%c: %d\n", square, subscore - oldsubscore);
         }
 
         uint64_t rank2_pawns;
@@ -344,7 +341,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
         subscore -= (cf_pawn_block * 5 + de_pawn_block * 10);
 
         bmloop(P2BM(board, 6 * w + BISHOP), square, temp) {
-            int oldsubscore = subscore;
             if ((1ull << square) & outposts[w]) {
                 SQPRINTF("  Sided bishop outpost for %c%c: %d\n", square, 14);
                 subscore += 12;
@@ -401,13 +397,11 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
                 subscore -= 10;
             }
 #endif
-            SQPRINTF("Total value of bishop on %c%c: %d\n", square, subscore - oldsubscore);
         }
 
         bmloop(P2BM(board, 6 * w + ROOK), square, temp) {
             file = square & 0x7;
             rank = square / 8;
-            int oldsubscore = subscore;
             if ((w && rank == 1) || (!w && rank == 6)) {
                 // TODO: only do this if king is on rank 8
                 // or if there are pawns on rank 7
@@ -483,13 +477,11 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
                 subscore -= 15;
             }
 #endif
-            SQPRINTF("Total value of rook on %c%c: %d\n", square, subscore - oldsubscore);
         }
 
 
         bmloop(P2BM(board, 6 * w + QUEEN), square, temp) {
             file = square & 0x7;
-            int oldsubscore = subscore;
             // A queen counts as a rook
             if (!file_occupied[file]) {
                 if (!((AFILE << file) & (pawns[0] | pawns[1]))) {
@@ -547,7 +539,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
                 SQPRINTF("Potential discovered attack or fork on %c%c: %d\n", square, QUEEN_XRAYED);
             }
 
-            SQPRINTF("Total value of queen on %c%c: %d\n", square, subscore - oldsubscore);
         }
 
         square = board->kingsq[w];
@@ -692,7 +683,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
 static int board_score_mg_material_pst(struct board* board, unsigned char who, struct deltaset* mvs, struct pawn_structure* pstruct) {
     DPRINTF("Scoring board\n");
     int square;
-    int count = 0;
     uint64_t temp;
     int score = 0;
 
