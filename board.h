@@ -81,6 +81,7 @@ struct board {
     uint8_t kingsq[2];
     int material_score_mg;
     int pst_score_mg;
+    int game_phase;
 };
 
 /* Data structure for move.
@@ -192,14 +193,6 @@ union transposition {
 struct ttable_entry {
     union transposition slot1;
     union transposition slot2;
-};
-
-struct opening_entry {
-    uint64_t hash;
-    struct delta_compressed move[3];
-    char valid;
-    char nvar;
-    char avoid;
 };
 
 // Output of generate_moves

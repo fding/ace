@@ -13,7 +13,6 @@
 const wchar_t pretty_piece_names[] = L"\x265f\x265c\x265e\x265d\x265b\x265a\x2659\x2656\x2658\x2657\x2655\x2654";
 
 struct ttable_entry* ttable;
-struct opening_entry* opening_table;
 uint64_t ttable_size = 0;
 
 int hashmapsize = 16777216;
@@ -79,62 +78,6 @@ int position_count_table_read(uint64_t hash) {
     return 0;
 }
 
-void opening_table_update(uint64_t hash, move_t move, char avoid) {
-    struct delta_compressed m = *((struct delta_compressed *) (&move));
-    int hash1 = ((1ull << 16) - 1) & hash;
-
-    if (!opening_table[hash1].valid) {
-        opening_table[hash1].hash = hash;
-        opening_table[hash1].valid = 1;
-        opening_table[hash1].nvar = 0;
-        opening_table[hash1].avoid = 0;
-    }
-
-    int i = 0;
-    if (opening_table[hash1].hash == hash) {
-        if (opening_table[hash1].nvar < 3) {
-            for (i = 0; i < opening_table[hash1].nvar; i++) {
-                struct delta_compressed entry = opening_table[hash1].move[i];
-                if (entry.square1 == m.square1 && entry.square2 == m.square2
-                        && entry.piece == m.piece && entry.captured == m.captured
-                        && entry.promotion == m.promotion)
-                    return;
-            }
-            opening_table[hash1].move[opening_table[hash1].nvar] = m;
-            opening_table[hash1].avoid |= (avoid << opening_table[hash1].nvar++);
-        }
-    }
-}
-
-int opening_table_read(uint64_t hash, move_t* move) {
-    int hash1 = ((1ull << 16) - 1) & hash;
-    int index;
-    if (opening_table[hash1].valid && opening_table[hash1].hash == hash) {
-        if (opening_table[hash1].nvar == 0) return -1;
-        while (1) {
-            index = rand() % opening_table[hash1].nvar;
-            if (!(opening_table[hash1].avoid & (1 << index))) {
-                *move = *((move_t *) &opening_table[hash1].move[index]);
-                return 0;
-            }
-        }
-    }
-    return -1;
-}
-
-void load_opening_table(char * fname) {
-    FILE * file = fopen(fname, "r");
-    fread(opening_table, sizeof(struct opening_entry), 65536, file);
-    fclose(file);
-}
-
-void save_opening_table(char * fname) {
-    FILE * file = fopen(fname, "w");
-    fprintf(stderr, "Saving opening table...\n");
-    fwrite(opening_table, sizeof(struct opening_entry), 65536, file);
-    fclose(file);
-}
-
 // The value of a draw.
 // Normally, it is 0, but against weaker opponents,
 // we can set it to negative, so that even if we are behind,
@@ -160,10 +103,6 @@ void engine_init(int flags) {
             exit(1);
         }
         memset(ttable, 0, hashmapsize * sizeof(struct ttable_entry));
-        if (!(opening_table = calloc(65536, sizeof(struct opening_entry))))
-            exit(1);
-        if (flags & FLAGS_USE_OPENING_TABLE)
-            load_opening_table("openings.acebase");
     }
     state.flags = flags;
 }

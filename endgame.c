@@ -303,14 +303,6 @@ int board_score_eg_material_pst(struct board* board, unsigned char who, struct d
     int whitematerial = material_for_player_endgame(board, 0);
     int blackmaterial = material_for_player_endgame(board, 1);
     float factor = 1;
-    /*
-    if (blackmaterial + whitematerial < 400)
-        factor = 3;
-    if (blackmaterial + whitematerial < 1000)
-        factor = 2;
-    if (blackmaterial + whitematerial < 1600)
-        factor = 1.5;
-    */
     if (blackmaterial + whitematerial < 4000) {
         factor = 2 - (blackmaterial + whitematerial) / 4000.0;
     }
