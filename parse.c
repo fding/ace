@@ -6,6 +6,7 @@
 #include "board.h"
 #include "moves.h"
 #include "pieces.h"
+#include "evaluation_parameters.h"
 
 void board_to_fen(struct board* board, char* fen) {
     int i, j;
@@ -123,6 +124,8 @@ char* board_init_from_fen(struct board* out, char* position) {
 
     out->kingsq[0] = LSBINDEX(out->pieces[0][KING]);
     out->kingsq[1] = LSBINDEX(out->pieces[1][KING]);
+    out->material_score_mg = 0;
+    out->pst_score_mg = 0;
 
     for (square = 0; square < 64; square++) {
         char piece = get_piece_on_square(out, square);
@@ -130,6 +133,46 @@ char* board_init_from_fen(struct board* out, char* position) {
             out->hash ^= square_hash_codes[square][piece];
             if (piece == WHITEPAWN || piece == BLACKPAWN) {
                 out->pawn_hash ^= square_hash_codes[square][piece];
+            }
+            switch (piece) {
+                case WHITEPAWN:
+                    out->material_score_mg += MIDGAME_PAWN_VALUE;
+                    break;
+                case BLACKPAWN:
+                    out->material_score_mg -= MIDGAME_PAWN_VALUE;
+                    break;
+                case WHITEKNIGHT:
+                    out->material_score_mg += MIDGAME_KNIGHT_VALUE;
+                    out->pst_score_mg += knight_table[square];
+                    break;
+                case BLACKKNIGHT:
+                    out->material_score_mg -= MIDGAME_KNIGHT_VALUE;
+                    out->pst_score_mg -= knight_table[square];
+                    break;
+                case WHITEBISHOP:
+                    out->material_score_mg += MIDGAME_BISHOP_VALUE;
+                    out->pst_score_mg += bishop_table[square];
+                    break;
+                case BLACKBISHOP:
+                    out->material_score_mg -= MIDGAME_BISHOP_VALUE;
+                    out->pst_score_mg -= bishop_table[square];
+                    break;
+                case WHITEROOK:
+                    out->material_score_mg += MIDGAME_ROOK_VALUE;
+                    out->pst_score_mg += rook_table[square];
+                    break;
+                case BLACKROOK:
+                    out->material_score_mg -= MIDGAME_ROOK_VALUE;
+                    out->pst_score_mg -= rook_table[square];
+                    break;
+                case WHITEQUEEN:
+                    out->material_score_mg += MIDGAME_QUEEN_VALUE;
+                    out->pst_score_mg += queen_table[square];
+                    break;
+                case BLACKQUEEN:
+                    out->material_score_mg -= MIDGAME_QUEEN_VALUE;
+                    out->pst_score_mg -= queen_table[square];
+                    break;
             }
         }
     }

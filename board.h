@@ -9,10 +9,18 @@
 #include "timer.h"
 
 #define AFILE 0x0101010101010101ull
+#define BFILE 0x0202020202020202ull
+#define CFILE 0x0404040404040404ull
+#define DFILE 0x0808080808080808ull
+#define EFILE 0x1010101010101010ull
+#define FFILE 0x2020202020202020ull
+#define GFILE 0x4040404040404040ull
 #define HFILE 0x8080808080808080ull
 #define RANK1 0x00000000000000ffull
 #define RANK2 0x000000000000ff00ull
 #define RANK3 0x0000000000ff0000ull
+#define RANK4 0x00000000ff000000ull
+#define RANK5 0x000000ff00000000ull
 #define RANK6 0x0000ff0000000000ull
 #define RANK7 0x00ff000000000000ull
 #define RANK8 0xff00000000000000ull
@@ -20,6 +28,10 @@
 #define bmloop(board, square, temp) \
     for (square=LSBINDEX(board), temp=board; temp; temp&=(temp-1), square=LSBINDEX(temp))
 #define P2BM(board, piece) (*((*(board)->pieces)+(piece)))
+
+// TODO: this seems backwards!
+#define LEFT(x) ((x) << 1)
+#define RIGHT(x) ((x) >> 1)
 
 #define CHECKMATE 24000
 #define INFINITY 25000
@@ -67,6 +79,8 @@ struct board {
     char castled;
     side_t who;
     uint8_t kingsq[2];
+    int material_score_mg;
+    int pst_score_mg;
 };
 
 /* Data structure for move.

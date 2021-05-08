@@ -47,11 +47,7 @@ struct killer_slot {
 
 struct killer_slot killer[32];
 uint64_t seen[64];
-/*
-int history[2][64][64];
-int max_history = 0;
-*/
-
+uint32_t history[2][64][64];
 
 static int ttable_search(struct board* restrict board, int who, int depth, move_t* restrict best,
         move_t* restrict move, int * restrict alpha, int beta);
@@ -209,11 +205,31 @@ int move_see(struct board* board, move_t* move) {
         from = get_cheapest_attacker(board, attackers, (d + who) & 1, &piece);
     } while (from);
 
-    while (--d)
+    while (--d) {
         gain[d-1] = -MAX(-gain[d-1], gain[d]);
+    }
 
     return gain[0];
 }
+
+struct sorted_move_iterator {
+    int scores[256];
+    move_t* moves;
+    move_t* move;
+    int idx;
+    int end;
+    int sorted_count;
+};
+
+#define SORTPHASE0 200000000
+#define SORTPHASE1 180000000
+#define SORTPHASE2 160000000
+#define SORTPHASE3 140000000
+#define SORTPHASE4 120000000
+#define SORTPHASE5 100000000
+#define SORTPHASE6 80000000
+#define SORTPHASE7 60000000
+#define PHASEGAP 20000000
 
 /* Sorts the available moves according to how good it is. The criterion is:
  * 1. Moves that result in a won position in the transposition table
@@ -226,90 +242,118 @@ int move_see(struct board* board, move_t* move) {
  *
  * Ties are broken by the score of the position after the move as recorded in the transposition table
  */
-static void sort_deltaset(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
-    int i, k;
-    move_t temp;
-    int scores[256];
-    k = 0;
-
-    for (i = 0; i < set->nmoves; i++) {
-        // Found in transposition table
-        if (tablemove->piece != -1 && move_equal(*tablemove, set->moves[i])) {
-            move_copy(&temp, &set->moves[0]);
-            move_copy(&set->moves[0], &set->moves[i]);
-            move_copy(&set->moves[i], &temp);
-            k++;
-            break;
+static void sorted_move_iterator_score(struct sorted_move_iterator* move_iter, struct board* board, char who, int phase, int start) {
+    for (int i = start; i < move_iter->end; i++) {
+        int see = move_see(board, &move_iter->moves[i]);
+        if (phase == 0) {
+            if (see > 0) {
+                move_iter->scores[i] = SORTPHASE1 + see;
+                move_iter->sorted_count += 1;
+                continue;
+            }
+            if (move_equal(move_iter->moves[i], killer[ply].m1)) {
+                move_iter->scores[i] = SORTPHASE2;
+                move_iter->sorted_count += 1;
+                continue;
+            }
+            if (move_equal(move_iter->moves[i], killer[ply].m2)) {
+                move_iter->scores[i] = SORTPHASE3;
+                move_iter->sorted_count += 1;
+                continue;
+            }
+            move_iter->scores[i] = 0;
+            continue;
         }
-    }
-
-    int start = k;
-    for (i = k; i < set->nmoves; i++) {
-        if (set->moves[i].captured != -1 || 
-                set->moves[i].promotion != set->moves[i].piece) {
-            scores[k] = move_see(board, &set->moves[i]);
-            move_copy(&temp, &set->moves[k]);
-            move_copy(&set->moves[k++], &set->moves[i]);
-            move_copy(&set->moves[i], &temp);
-        }
-    }
-    insertion_sort(set->moves, scores, start, k);
-
-    // Killer moves
-    for (i = k; i < set->nmoves; i++) {
-        if (move_equal(set->moves[i], killer[ply].m1)) {
-            move_copy(&temp, &set->moves[k]);
-            move_copy(&set->moves[k++], &set->moves[i]);
-            move_copy(&set->moves[i], &temp);
-            break;
-        }
-    }
-    for (i = k; i < set->nmoves; i++) {
-        if (move_equal(set->moves[i], killer[ply].m2)) {
-            move_copy(&temp, &set->moves[k]);
-            move_copy(&set->moves[k++], &set->moves[i]);
-            move_copy(&set->moves[i], &temp);
-            break;
-        }
-    }
-    
-    // Checks
-    start = k;
-    for (i = k; i < set->nmoves; i++) {
-        apply_move(board, &set->moves[i]);
+        apply_move(board, &move_iter->moves[i]);
         uint64_t occupancy = board_occupancy(board, 0) | board_occupancy(board, 1);
         uint64_t check_move = is_in_check(board, 1 - who, 0, occupancy);
-        reverse_move(board, &set->moves[i]);
+        move_t best;
+        reverse_move(board, &move_iter->moves[i]);
+        int history_score = history[who][move_iter->moves[i].square1][move_iter->moves[i].square2];
+        history_score = MIN(history_score, PHASEGAP);
+
+        if (move_iter->moves[i].captured != -1 ||
+                move_iter->moves[i].promotion != move_iter->moves[i].piece) {
+            if (check_move) {
+                move_iter->scores[i] = SORTPHASE4 + see;
+                move_iter->sorted_count += 1;
+                continue;
+            }
+            if (see == 0) {
+                move_iter->scores[i] = SORTPHASE5 + history_score;
+                move_iter->sorted_count += 1;
+                continue;
+            }
+        }
         if (check_move) {
-            scores[k] = move_see(board, &set->moves[i]);
-            move_copy(&temp, &set->moves[k]);
-            move_copy(&set->moves[k++], &set->moves[i]);
-            move_copy(&set->moves[i], &temp);
+            move_iter->scores[i] = SORTPHASE6 + history_score;
+            move_iter->sorted_count += 1;
+            continue;
         }
+        move_iter->scores[i] = SORTPHASE7 + history_score + see;
+        move_iter->sorted_count += 1;
     }
-    insertion_sort(set->moves, scores, start, k);
-
-    /*
-    // Pawn pushes
-    start = k;
-    for (i = k; i < set->nmoves; i++) {
-        if (set->moves[i].piece == PAWN) {
-            scores[k] = move_see(board, &set->moves[i]);
-            move_copy(&temp, &set->moves[k]);
-            move_copy(&set->moves[k++], &set->moves[i]);
-            move_copy(&set->moves[i], &temp);
-        }
-    }
-    insertion_sort(set->moves, scores, start, k);
-    */
-
-    // History table
-    for (i = k; i < set->nmoves; i++) {
-        scores[i] = /*((history[who][set->moves[i].square1][set->moves[i].square2] << 7) >> max_history) + */ move_see(board, &set->moves[i]);
-    }
-
-    insertion_sort(set->moves, scores, k, set->nmoves);
 }
+
+static int sorted_move_iterator_next(struct sorted_move_iterator* move_iter, struct board* board, char who, move_t * table_move) {
+    move_iter->idx += 1;
+    if (move_iter->idx >= move_iter->end) {
+        return 0;
+    }
+    if (move_iter->idx == 0 && table_move->piece != -1) {
+        move_iter->move = table_move;
+        move_iter->sorted_count += 1;
+        return 1;
+    }
+
+    int besti = move_iter->idx;
+    if (move_iter->idx <= 1) {
+        if (table_move->piece != -1) {
+            for (int i = 1; i < move_iter->end; i++) {
+                if (move_equal(*table_move, move_iter->moves[i])) {
+                    move_t tm;
+                    move_copy(&tm, &move_iter->moves[i]);
+                    move_copy(&move_iter->moves[i], &move_iter->moves[0]);
+                    move_copy(&move_iter->moves[0], &tm);
+                    break;
+                }
+            }
+        }
+        sorted_move_iterator_score(move_iter, board, who, 0, move_iter->sorted_count);
+    }
+    if (move_iter->idx >= move_iter->sorted_count) {
+        sorted_move_iterator_score(move_iter, board, who, 1, move_iter->sorted_count);
+    }
+    for (int i = move_iter->idx + 1; i < move_iter->end; i++) {
+        if (move_iter->scores[i] > move_iter->scores[move_iter->idx]) {
+            besti = i;
+        }
+    }
+
+    if (besti == move_iter->idx) {
+        move_iter->move = &move_iter->moves[besti];
+        return 1;
+    }
+
+    move_t tm;
+    move_copy(&tm, &move_iter->moves[besti]);
+    move_copy(&move_iter->moves[besti], &move_iter->moves[move_iter->idx]);
+    move_copy(&move_iter->moves[move_iter->idx], &tm);
+    move_iter->scores[besti] = move_iter->scores[move_iter->idx];
+
+    move_iter->move = &move_iter->moves[move_iter->idx];
+    return 1;
+}
+
+static void sorted_move_iterator_init(struct sorted_move_iterator* move_iter, struct board* board, char who, struct deltaset* set, move_t * tablemove) {
+    int i, k;
+    move_iter->idx = -1;
+    move_iter->move = NULL;
+    move_iter->moves = set->moves;
+    move_iter->end = set->nmoves;
+    move_iter->sorted_count = 0;
+}
+
 
 /* Same thing, except that here, we only assume capture moves */
 static void sort_deltaset_qsearch(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
@@ -410,7 +454,9 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     branches += 1;
     alpha = MAX(alpha, -CHECKMATE + board->nmoves);
     beta = MIN(beta, CHECKMATE - board->nmoves - 1);
-    if (alpha >= beta) return alpha;
+    if (alpha >= beta) {
+        return alpha;
+    }
 
     struct deltaset out;
     int score = 0;
@@ -426,10 +472,11 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     }
 
     move_t tablemove;
+    tablemove.piece = -1;
     move_t best;
 
     int nmoves = 0;
-    generate_captures(&out, board);
+    generate_qsearch_moves(&out, board);
 
     struct deltaset out1;
 
@@ -451,6 +498,18 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
             }
             if (who) score = -score;
         }
+        if (stored->metadata.type & MOVESTORED) {
+            if (is_pseudo_valid_move(board, who, stored->move)) {
+                move_copy(&tablemove, &stored->move);
+            } else {
+                char buffer[8];
+                char board_buffer[128];
+                move_to_calgebraic(board, buffer, &stored->move);
+                board_to_fen(board, board_buffer);
+                fprintf(stderr, "enpassant: %llx, square2: %llx, eq: %d, piece: %d\n", board->enpassant, (1ull << stored->move.square2), board->enpassant == (1ull << stored->move.square2), stored->move.piece);
+                fprintf(stderr, "(1) Trying to apply invalid move (%s) on board: %s\n", buffer, board_buffer);
+            }
+        }
     } else {
         if (nmoves == 0) {
             generate_moves(&out1, board);
@@ -463,54 +522,38 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     int initial_score = score;
 
     // Terminal condition: no more moves are left, or we run out of depth
-    if (depth < ONE_PLY || nmoves == 0) {
+    if (depth < ONE_PLY || (nmoves == 0 && !out.check)) {
         return score;
     }
 
-    if (initial_score >= beta) return initial_score;
+    if (!out.check) {
+        alpha = MAX(alpha, initial_score);
+        if (alpha >= beta) return alpha;
+    }
 
     // Futility pruning: if we are gifted a queen and is still below alpha,
     // assume there's nothing we could possibly do to improve the situation
     // and prune away the subtree
-    if (initial_score + 1000 < alpha) return initial_score + 1000;
-
-    alpha = MAX(alpha, initial_score);
-
-    // Look in the transposition table to see if we have seen the position before,
-    // and if so, return the score if possible.
-    // Even if we can't return the score due to lack of depth,
-    // the stored move is probably good, so we can improve the pruning
-    tablemove.piece = -1;
-    int res = ttable_search(board, who, depth, &best, &tablemove, &alpha, beta);
-    if (res == 0) {
-        return alpha;
+    // TODO: Consider case if we have a promotable pawn. That could trigger
+    // two queen's worth of swing
+    if (initial_score + 950 < alpha) {
+        return initial_score + 950;
     }
 
     sort_deltaset_qsearch(board, who, &out, &tablemove);
 
     int value = 0;
-    int delta_cutoff = 300;
+    int delta_cutoff = 200;
     for (i = 0; i < out.nmoves; i++) {
         // Delta-pruning for quiescent search:
         // If after we capture and don't allow the opponent to respond and we're still more than a minor piece
         // worse than alpha, this capture must really suck, so no need to consider it.
         // We never prune if we are in check, because that could easily result in mistaken evaluation
-        if (!out.check) {
-            int see = no_recap_move_see(board, &out.moves[i]);
-            value = initial_score + see;
-            if (value >= beta) {
-                alpha = value;
-                return alpha;
-            }
-            if (value + delta_cutoff < alpha) {
-                continue;
-            }
-            if (alpha < value) {
-                alpha = value;
-            }
-            // Don't consider bad captures
-            if (!out.check && see < 0)
-                continue;
+        // Consider switching off for endgame
+        int see = no_recap_move_see(board, &out.moves[i]);
+        value = initial_score + see;
+        if (value + delta_cutoff < alpha) {
+            continue;
         }
 
         apply_move(board, &out.moves[i]);
@@ -579,12 +622,18 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     best->piece = -1; 
 
     // Detect cycles, which result in a drawn position
-    for (i = 0; i < ply; i++) {
+    int min_plies = MAX(0, ply - 2 * board->nmovesnocapture - 1);
+    for (i = ply - 4; i >= min_plies; i--) {
         if (board->hash == seen[i]) {
             short_circuit_count++;
             return 0;
         }
     }
+    if (position_count_table_read(board->hash) >= 2 && ply > 0) {
+        short_circuit_count++;
+        return 0;
+    }
+
     seen[ply] = board->hash;
     ply++;
 
@@ -600,24 +649,24 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     }
 
     int nmoves = 0;
-
     generate_moves(&out, board);
-
     nmoves = out.nmoves;
 
     if (extensions > 0 && !nullmode) {
+    /*
         if (out.check) {
-                if (prev) {
-                    reverse_move(board, prev);
-                    int see = move_see(board, prev);
-                    apply_move(board, prev);
-                    if (see >= 0) {
-                        depth += ONE_PLY;
-                        extensions -= ONE_PLY;
-                        extended = 1;
-                    }
+            if (prev) {
+                reverse_move(board, prev);
+                int see = move_see(board, prev);
+                apply_move(board, prev);
+                if (see >= 0) {
+                    depth += ONE_PLY;
+                    extensions -= ONE_PLY;
+                    extended = 1;
                 }
+            }
         }
+    */
         if (nmoves <= 2) {
             depth += ONE_PLY;
             extensions -= ONE_PLY;
@@ -643,7 +692,6 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         return score;
     }
 
-
     move_t tablemove;
     tablemove.piece = -1;
 
@@ -662,14 +710,16 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     if (who) initial_score = -initial_score;
 
     // Razoring (TODO: check if a pawn is promotable)
+    /*
     if (depth < 3 * ONE_PLY && !out.check && nmoves > 1 && beta == alpha + 1
-            && initial_score + 600 <= alpha && tablemove.piece == -1) {
+            && initial_score + 400 <= alpha && tablemove.piece == -1) {
         score = qsearch(board, timer, 32 * ONE_PLY, alpha, beta, who);
-        if (score < alpha - 700) {
+        if (score < alpha - 300) {
             ply--;
             return score;
         }
     }
+    */
     
     // Null pruning:
     // If we skip a move, and the move is still bad for the oponent,
@@ -677,7 +727,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     // We check if we have at least 5 pieces. Otherwise, we might encounter zugzwang
     // TODO: ply > 1?
     if (depth >= 2 * ONE_PLY && nullmode == 0 && !out.check &&
-            (board->pieces[who][KNIGHT] | board->pieces[who][BISHOP] | board->pieces[who][ROOK] | board->pieces[who][QUEEN])) {
+            popcnt(board->pieces[who][KNIGHT] | board->pieces[who][BISHOP] | board->pieces[who][ROOK] | board->pieces[who][QUEEN]) >= 3) {
         uint64_t old_enpassant = board_flip_side(board, 1);
         int rdepth = depth - 3 * ONE_PLY - depth / 4;
         score = -search(board, timer, &temp, NULL, rdepth, -beta, -beta + 1, 0, 1, 1 - who);
@@ -702,20 +752,22 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     }
 
     // Internal iterative depening
-    if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 5 * ONE_PLY && !nullmode) {
-        search(board, timer, &tablemove, prev, depth - 2 * ONE_PLY, alpha, beta, 0, nullmode, who);
+    if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 6 * ONE_PLY && !nullmode) {
+        search(board, timer, &tablemove, prev, depth - depth / 4 - ONE_PLY, alpha, beta, 0, nullmode, who);
     }
 
-    sort_deltaset(board, who, &out, &tablemove);
+    struct sorted_move_iterator iter;
+    sorted_move_iterator_init(&iter, board, who, &out, &tablemove);
 
     int allow_prune = !out.check && (nmoves > 6) && !extended;
     int checked_one_capture = 0;
     for (i = 0; i < out.nmoves; i++) {
-        move_t * move = &out.moves[i];
-        if (out.moves[i].captured != -1 && depth <= 2 * ONE_PLY && allow_prune) {
+        sorted_move_iterator_next(&iter, board, who, &tablemove);
+        move_t * move = iter.move;
+        if (move->captured != -1 && depth <= 2 * ONE_PLY && allow_prune) {
             // Don't consider bad captures
             // TODO: what happens if we end up skipping all legal moves? Should it trigger alpha cutoff?
-            if (move_see(board, &out.moves[i]) < 0) {
+            if (move_see(board, move) < 0) {
                 if (checked_one_capture)
                     continue;
                 checked_one_capture = 1;
@@ -727,9 +779,9 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         // because our move can only increase the positional scores,
         // which is not that large of a factor
         // TODO: more agressive pruning. If ply>7 and depth<=20, also prune with delta_cutoff=500
-        if (out.moves[i].captured == -1 && out.moves[i].promotion == out.moves[i].piece && depth <= 6 * ONE_PLY
+        if (move->captured == -1 && move->promotion == move->piece && depth <= 6 * ONE_PLY
                 && alpha > -CHECKMATE/2 && beta < CHECKMATE/2 && allow_prune) {
-            if (!gives_check(board, board_occupancy(board, 1 - who) | board_occupancy(board, who), &out.moves[i], who)) {
+            if (!gives_check(board, board_occupancy(board, 1 - who) | board_occupancy(board, who), move, who)) {
                 if (initial_score + futility_margin[depth / ONE_PLY] < alpha) {
                     continue;
                 }
@@ -743,18 +795,33 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
         apply_move(board, move);
         int skip_deep_search = 0;
-        int allow_lmr = allow_prune && depth >= 2 * ONE_PLY && ((i > 2 && beta == alpha + 1));// || (i > 4 && i >= nchecks && out.moves[i].captured == -1
-                    //&& out.moves[i].promotion == out.moves[i].piece));
+        int allow_lmr = allow_prune && depth >= 4 * ONE_PLY && (((i > 2 && beta == alpha + 1)) || (i >= 4 && move->captured == -1
+                    && move->promotion == move->piece && alpha > -CHECKMATE/2 && beta < CHECKMATE/2));
         if (allow_lmr) {
-            if (i > 8)
-                score = -search(board, timer, &temp, move, depth - 6 * ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
-            if (i > 4)
-                score = -search(board, timer, &temp, move, depth - 4 * ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
-            else
-                score = -search(board, timer, &temp, move, depth - 2 * ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
-            if (score <= alpha) {
-                skip_deep_search = 1;
-                alpha_cutoff_count += 1;
+            uint64_t occupancy = board_occupancy(board, 0) | board_occupancy(board, 1);
+            uint64_t check_move = is_in_check(board, 1 - who, 0, occupancy);
+            if (!check_move) {
+                int reduction = ONE_PLY;
+                if (i > 8)
+                    reduction = 3 * ONE_PLY;
+                else if (i > 4)
+                    reduction = 2 * ONE_PLY;
+
+                /*
+                if (beta == alpha + 1) {
+                    reduction += ONE_PLY;
+                }
+                */
+                if (depth >= 8 * ONE_PLY) {
+                    reduction += ONE_PLY;
+                }
+
+                score = -search(board, timer, &temp, move, depth - ONE_PLY - reduction, -alpha - 1, -alpha, 0, nullmode, 1 - who);
+
+                if (score <= alpha) {
+                    skip_deep_search = 1;
+                    alpha_cutoff_count += 1;
+                }
             }
         }
 
@@ -763,7 +830,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
                 score = -search(board, timer, &temp, move, depth - ONE_PLY, -beta, -alpha, extensions, nullmode, 1 - who);
             } else {
                 score = -search(board, timer, &temp, move, depth - ONE_PLY, -alpha - 1, -alpha, 0, nullmode, 1 - who);
-                if (!out_of_time && score >= alpha && score < beta)
+                if (!out_of_time && score > alpha && score < beta)
                     score = -search(board, timer, &temp, move, depth - ONE_PLY, -beta, -alpha, extensions, nullmode, 1 - who);
             }
         }
@@ -777,17 +844,13 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             move_copy(&transposition.move, move);
             type = EXACT | MOVESTORED;
             pvariation = 0;
-            /*
-            history[who][move->square1][move->square2] += depth / ONE_PLY;
-            while (history[who][move->square1][move->square2] > (1 << max_history))
-                max_history++;
-                */
         }
         if (beta <= alpha) {
             beta_cutoff_count += 1;
             if (move->captured == -1)
                 update_killer(ply, move);
             type = BETA_CUTOFF | MOVESTORED;
+            history[who][move->square1][move->square2] += (depth / ONE_PLY) * (depth / ONE_PLY);
             break;
         }
     }
@@ -836,24 +899,33 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
     tt_hits = 0;
     tt_tot = 0;
 
-    /*
     for (int w = 0; w < 2; w++) {
         for (int sq1 = 0; sq1 < 64; sq1++) {
             for (int sq2 = 0; sq2 < 64; sq2++) {
-                history[w][sq1][sq2] /= 8;
+                history[w][sq1][sq2] = 0;
             }
         }
     }
-    max_history -= 3;
-    if (max_history < 0)
-        max_history = 0;
-    */
 
+    static int leeway_table[32] = {40, 40, 35, 35, 30, 30, 30, 30,
+        25, 25, 20, 20, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10,
+    };
+    /*
+    static int leeway_table[32] = {90, 50, 40, 30, 30, 30, 25, 25,
+        20, 20, 20, 20, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10,
+        10, 10, 10, 10, 10, 10, 10, 10,
+    };
+    */
+    /*
     static int leeway_table[32] = {200, 100, 80, 80, 50, 40, 40, 40,
         40, 40, 40, 40, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
     };
+     */
 
     timer_start(timer);
 

@@ -45,7 +45,7 @@ int engine_won();
 int engine_score();
 int engine_search(char * move, int infinite_mode, int wtime, int btime, int winc, int binc, int moves_to_go);
 
-void engine_perft(int initial, int depth, side_t who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles);
+void engine_perft(int initial, int depth, side_t who, uint64_t* count, uint64_t* enpassants, uint64_t* captures, uint64_t* check, uint64_t* promotions, uint64_t* castles, int eval, int* eval_score);
 
 extern int debug_mode;
 

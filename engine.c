@@ -35,7 +35,7 @@ struct position_count {
 
 // Position count table: counts the number of time a position has occured in the past
 // Used for draw detection
-struct position_count position_count_table[256];
+struct position_count position_count_table[1024];
 
 uint64_t square_hash_codes[64][12];
 uint64_t castling_hash_codes[4];
@@ -62,7 +62,7 @@ static void initialize_hash_codes(void) {
 }
 
 void position_count_table_update(uint64_t hash) {
-    int hash1 = hash & 0xff;
+    int hash1 = hash & 0x3ff;
     if (position_count_table[hash1].valid && position_count_table[hash1].hash == hash) {
         position_count_table[hash1].count++;
     } else {
@@ -73,7 +73,7 @@ void position_count_table_update(uint64_t hash) {
 }
 
 int position_count_table_read(uint64_t hash) {
-    int hash1 = hash & 0xff;
+    int hash1 = hash & 0x3ff;
     if (position_count_table[hash1].valid && position_count_table[hash1].hash == hash)
         return position_count_table[hash1].count;
     return 0;
@@ -217,6 +217,11 @@ int engine_score() {
             -INFINITY, INFINITY);
 }
 
+int engine_qsearch_score() {
+    struct timer* timer = new_infinite_timer();
+    return qsearch(&state.board, timer, 12 * 8, -10000, 10000, state.board.who);
+}
+
 struct board* engine_get_board() {
     return &state.board;
 }
@@ -231,10 +236,14 @@ int engine_won() {
 
 void engine_perft(int initial, int depth, side_t who,
         uint64_t* count, uint64_t* enpassants, uint64_t* captures,
-        uint64_t* check, uint64_t* promotions, uint64_t* castles) {
+        uint64_t* check, uint64_t* promotions, uint64_t* castles,
+        int eval, int* eval_score) {
     struct deltaset mvs;
     int i;
     generate_moves(&mvs, &state.board);
+    if (eval) {
+        eval_score += board_score(&state.board, who, &mvs, -30000, 30000);
+    }
     char buffer[8];
     uint64_t oldhash;
     if (depth == 0 && mvs.check) *check += 1;
@@ -253,7 +262,7 @@ void engine_perft(int initial, int depth, side_t who,
         int oldcount = *count;
         if (depth == 0) *count += 1;
         else {
-            engine_perft(depth, depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles);
+            engine_perft(depth, depth - 1, 1 - who, count, enpassants, captures, check, promotions, castles, eval, eval_score);
         }
         if (depth == initial) {
             move_to_algebraic(&state.board, buffer, &mvs.moves[i]);
@@ -275,11 +284,13 @@ static int engine_move_internal(move_t move) {
     }
 
     position_count_table_update(state.board.hash);
+    /*
     if (position_count_table_read(state.board.hash) >= 4) {
         // Draw
         state.won = GAME_DRAW;
         return 0;
     }
+    */
 
     state.moves[state.board.nmoves - 1] = move;
 

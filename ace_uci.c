@@ -49,7 +49,7 @@ int main(int argc, char* argv[]) {
     memset(buffer, 0, 4096);
     FILE * f = fopen("log.txt", "a");
 
-    engine_init(FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH | FLAGS_USE_OPENING_TABLE);
+    engine_init(FLAGS_UCI_MODE | FLAGS_DYNAMIC_DEPTH); // | FLAGS_USE_OPENING_TABLE);
     engine_reset_hashmap(1 << 26);
     while (getline(&buffer, &n, stdin) > 0) {
         fprintf(f, "%s", buffer);
@@ -207,6 +207,14 @@ int main(int argc, char* argv[]) {
                         token = strtok(NULL, " ");
                         if (token) {
                             timec.moves_to_go = atoi(token);
+                        }
+                    }
+                    else if (strcmp(token, "movetime") == 0) {
+                        token = strtok(NULL, " ");
+                        if (token) {
+                            timec.moves_to_go = 1;
+                            timec.wtime = atoi(token);
+                            timec.btime = atoi(token);
                         }
                     }
                     token = strtok(NULL, " ");

@@ -641,23 +641,62 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
     }
 }
 
+void generate_qsearch_moves(struct deltaset* mvs, struct board* board) {
+    side_t who = board->who;
+    uint64_t king = board->pieces[who][KING];
+    uint64_t friendly_occupancy = board_occupancy(board, who);
+    uint64_t enemy_occupancy = board_occupancy(board, 1 - who);
+    int kingsquare = board->kingsq[who];
+    uint64_t opponent_attacks = attacked_squares(board, 1-who, enemy_occupancy | (friendly_occupancy ^ king));
+    uint64_t check = is_in_check(board, who, friendly_occupancy, enemy_occupancy);
+    mvs->check = check;
+    if (check) {
+        generate_moves(mvs, board);
+        return;
+    }
+
+    generate_captures(mvs, board);
+    
+    // Castling
+    if (who) {
+        // Black queenside
+        if ((board->cancastle & CASTLE_PRIV_BQ) &&
+                !(0x0e00000000000000ull & (friendly_occupancy | enemy_occupancy)) &&
+                !(0x1c00000000000000ull & opponent_attacks)) {
+            deltaset_add_castle(mvs, kingsquare, 58);
+        }
+        // Black kingside
+        if ((board->cancastle & CASTLE_PRIV_BK) &&
+                !(0x6000000000000000ull & (friendly_occupancy | enemy_occupancy)) &&
+                !(0x7000000000000000ull & opponent_attacks)) {
+            deltaset_add_castle(mvs, kingsquare, 62);
+        }
+    } else {
+        // White queenside;
+        if ((board->cancastle & CASTLE_PRIV_WQ) &&
+                !(0x000000000000000eull & (friendly_occupancy | enemy_occupancy)) &&
+                !(0x000000000000001cull & opponent_attacks)) {
+            deltaset_add_castle(mvs, kingsquare, 2);
+        }
+        // White kingside
+        if ((board->cancastle & CASTLE_PRIV_WK) &&
+                !(0x0000000000000060ull & (friendly_occupancy | enemy_occupancy)) &&
+                !(0x0000000000000070ull & opponent_attacks)) {
+            deltaset_add_castle(mvs, kingsquare, 6);
+        }
+    }
+}
+
 void generate_captures(struct deltaset* mvs, struct board* board) {
     uint64_t temp, square;
     uint64_t attack, opponent_attacks;
     uint64_t friendly_occupancy, enemy_occupancy;
-    uint64_t check;
     uint64_t mask;
 
     side_t who = board->who;
 
     friendly_occupancy = board_occupancy(board, who);
     enemy_occupancy = board_occupancy(board, 1 - who);
-
-    check = is_in_check(board, who, friendly_occupancy, enemy_occupancy);
-    if (check) {
-        generate_moves(mvs, board);
-        return;
-    }
 
     mvs->nmoves = 0;
     mvs->check = 0;
@@ -692,7 +731,7 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
     mvs->check = 0;
 
     mask = enemy_occupancy;
-    int pawn_mask = mask | RANK1 | RANK8;
+    uint64_t pawn_mask = mask | RANK1 | RANK8;
 
     // The following are ordered in likelihood that moving the piece is a good move
     // Knights
@@ -730,7 +769,8 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
             }
             attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pinmask & pawn_mask;
         } else {
-            attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pawn_mask;
+            uint64_t attackset =attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy);
+            attack = attackset & pawn_mask;
         }
         deltaset_add_move(board, who, mvs, PAWN, square, attack, friendly_occupancy, enemy_occupancy);
     }

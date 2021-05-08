@@ -1462,15 +1462,15 @@ POSITIONAL_BADEXCHANGES = ('Positional (Avoid pointless exchanges)', [
 
 FNULL = open(os.devnull, 'w')
 
-for tname, tcases in [TACTICS, POSITIONAL_UNDERMINING,
-                       POSITIONAL_OPEN,
-                      POSITIONAL_OUTPOSTS, POSITIONAL_SQUARE,
-                     POSITIONAL_BISHOP_VS_KNIGHT, POSITIONAL_RECAPTURE, POSITIONAL_SIMPLIFICATION,
+for tname, tcases in [ TACTICS, POSITIONAL_UNDERMINING,
+                      # POSITIONAL_OPEN,
+                     # POSITIONAL_OUTPOSTS, POSITIONAL_SQUARE,
+                     # POSITIONAL_BISHOP_VS_KNIGHT, POSITIONAL_RECAPTURE, POSITIONAL_SIMPLIFICATION,
                      POSITIONAL_QSIDE_STORM, POSITIONAL_KSIDE_STORM, POSITIONAL_KING, POSITIONAL_CENTER,
                       POSITIONAL_CENTRAL_PAWN, POSITIONAL_RANK7, POSITIONAL_BADEXCHANGES
                      ]:
     score = 0
-    print '%s: ' % tname
+    print('%s: ' % tname)
     i = 0
     for i, (fen, move) in enumerate(tcases):
         if i > 10:
@@ -1486,12 +1486,13 @@ for tname, tcases in [TACTICS, POSITIONAL_UNDERMINING,
             else:
                 black = 'c'
             output = subprocess.check_output(["./chess", "--white", white, "--black", black, "--depth", "10", "--starting", fen], stderr=FNULL, stdin=f)
+            output = output.decode("utf8")
             if output.strip() in move:
-                print 'Selected best move for "%s"' % fen
+                print('Selected best move for "%s"' % fen)
                 score += 1
             else:
-                print 'Selected %s instead of %s for "%s"' % (output.strip(), ';'.join(move), fen)
+                print('Selected %s instead of %s for "%s"' % (output.strip(), ';'.join(move), fen))
 
-    print 'Final score: %.2f' % (score / float(i + 1))
+    print('Final score: %.2f' % (score / float(i + 1)))
 
 sys.exit(0)

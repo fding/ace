@@ -42,10 +42,10 @@ int main(int argc, char* argv[]) {
     int whitecomp, blackcomp;
     
     int wstarttime, bstarttime, wtime, btime, winc, binc, reset_period, movestogo;
-    wstarttime = 60000 * 5;
-    bstarttime = 60000 * 5;
-    winc = 100;
-    binc = 100;
+    wstarttime = 60000;
+    bstarttime = 60000;
+    winc = 500;
+    binc = 500;
     reset_period = 0;
 
     whitecomp = 0;

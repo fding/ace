@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <time.h>
 #include "timer.h"
 #include "util.h"
@@ -53,6 +54,9 @@ int timer_continue(struct timer * timer) {
 void timer_advise(struct timer * timer, int move_changed) {
     if (move_changed)
         timer->allotted_time = MIN(timer->max_time, timer->allotted_time * timer->increment * timer->increment);
+    /*
     else
         timer->allotted_time = MIN(timer->max_time, timer->allotted_time / timer->increment);
+    */
 }
+

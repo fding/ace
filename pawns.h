@@ -7,6 +7,8 @@ struct pawn_structure {
     uint64_t pawn_hash;
     uint64_t passed_pawns[2];
     uint64_t holes[2];
+    uint64_t rear_span[2];
+    uint64_t passed_pawn_advance_span[2];
     int32_t score;
     int32_t score_eg;
 };

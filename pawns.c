@@ -15,27 +15,52 @@ uint64_t hash(uint64_t wpawns, uint64_t bpawns) {
 int pawn_table[64] = {
     800, 800, 800, 800, 800, 800, 800, 800,
     -6, 7, -4, -2, -2, -4, 7, -6,
-    -7, -6, -3, -1, -1, -3, -6, -7,
-    -7, 0, 5, 13, 13, 5, 0, -7,
-    -12, -7, 10, 17, 17, 10, -7, -12,
-    -13, -3, 10, 12, 12, 10, -3, -13,
-    -10, 0, 2, 4, 4, 2, 0, -10,
+    -7, -3, -3, 8, 8, -3, -3, -7,
+    -10, 0, 8, 15, 15, 8, 0, -10,
+    -14, -7, 14, 20, 20, 14, -7, -14,
+    -13, -3, 5, 7, 7, 5, -3, -13,
+    -10, -2, 0, 2, 2, 0, -2, -10,
     0, 0, 0, 0, 0, 0, 0, 0
 };
 
-int pawn_table_endgame[64] = {
+/*
+
+int pawn_table[64] = {
     800, 800, 800, 800, 800, 800, 800, 800,
-     15,  17,  14,  14,  14,  14,  17, 15,
-     15,  17,  19,  19,  19,  19,  17, 15,
-     10,  12,  14,  14,  14,  14,  12, 10,
-     5,  7,  8,  8,  8,  8,  7, 5,
-     0,  2,  3,  3,  3,  3,  2, 0,
-    -5, -3, -2, -2, -2, -2, -3, -5,
+    -6, 7, -4, -2, -2, -4, 7, -6,
+    -7, -6, -3, 8, 8, -3, -6, -7,
+    -7, 0, 8, 15, 15, 8, 0, -7,
+    -12, -7, 14, 20, 20, 14, -7, -12,
+    -13, -3, 5, 7, 7, 5, -3, -13,
+    -5, 0, 0, 2, 2, 0, 0, -5,
     0, 0, 0, 0, 0, 0, 0, 0
 };
-int passed_pawn_table_endgame[8] = {0, 20, 30, 40, 77, 154, 256, 800};
-int isolated_pawn_penalty_endgame[8] = {20, 25, 25, 25, 25, 25, 25, 20};
-int doubled_pawn_penalty_endgame[8] = {20, 25, 25, 30, 30, 25, 25, 20};
+*/
+
+int pawn_table_endgame[64] = {
+    800, 800, 800, 800, 800, 800, 800, 800,
+     35,  37,  38,  38,  38,  38,  37, 35,
+     23,  26,  29,  29,  29,  29,  26, 23,
+     14,  16,  18,  20,  20,  18,  16, 14,
+     7,  9,  10,  12,  12,  10,  9, 7,
+     0,  2,  3,  3,  3,  3,  2, 0,
+    -7, -5, -3, -3, -3, -3, -5, -7,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
+
+/*
+int pawn_table_endgame[64] = {
+    800, 800, 800, 800, 800, 800, 800, 800,
+     125,  114,  98,  93,  93,  98,  114, 125,
+     50,  53,  43,  35,  35,  43,  53, 50,
+     14,  16,  18,  20,  20,  18,  16, 14,
+     7,  9,  10,  12,  12,  10,  9, 7,
+     0,  2,  3,  3,  3,  3,  2, 0,
+    -7, -5, -3, -3, -3, -3, -5, -7,
+    0, 0, 0, 0, 0, 0, 0, 0
+};
+*/
+
 
 struct pawn_structure * evaluate_pawns(struct board* board) {
     struct pawn_structure * stored;
@@ -54,8 +79,11 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
     stored->passed_pawns[1] = 0;
 
     uint64_t advance_mask[2];
+    uint64_t rear_span[2];
     advance_mask[0] = 0ull;
     advance_mask[1] = 0ull;
+    rear_span[0] = 0ull;
+    rear_span[1] = 0ull;
     uint64_t all_pawns = board->pieces[0][PAWN] | board->pieces[1][PAWN];
 
     for (int who = 0; who < 2; who++) {
@@ -73,6 +101,13 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             count += 1;
             rank = square / 8;
             file = square & 0x7;
+            uint64_t rear_span_mask = (AFILE << file);
+            if (who) {
+                rear_span_mask = rear_span_mask << (8 * rank + 8);
+            } else {
+                rear_span_mask = rear_span_mask >> (8 * (8 - rank));
+            }
+            rear_span[who] |= rear_span_mask;
             int loc = (who == 0) ? (63 - square) : square;
             subscore += pawn_table[loc];
             DPRINTF("Pawn score on %c%c: %d\n", 'a'+file, '1'+rank, pawn_table[loc]);
@@ -118,19 +153,19 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     sq2ahead = (1ull << (square + 16));
                 }
                 if (file != 0) {
-                    attackers |= (sq1ahead >> 1);
-                    blockers |= (sq2ahead >> 1);
+                    attackers |= RIGHT(sq1ahead);
+                    blockers |= RIGHT(sq2ahead);
                 }
                 if (file != 7) {
-                    attackers |= (sq1ahead << 1);
-                    blockers |= (sq2ahead << 1);
+                    attackers |= LEFT(sq1ahead);
+                    blockers |= LEFT(sq2ahead);
                 }
                 if (!(attackers & board->pieces[1-who][PAWN]) && (blockers & board->pieces[1-who][PAWN])) {
                     penalized = 1;
                     subscore += MIDGAME_BACKWARD_PAWN;;
-                    subscore_eg -= 30;
+                    subscore_eg += ENDGAME_BACKWARD_PAWN;
                     DPRINTF("Backward pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank, MIDGAME_BACKWARD_PAWN);
-                    DPRINTF("Backward pawn eg penalty on %c%c: %d\n", 'a'+file, '1'+rank, -30);
+                    DPRINTF("Backward pawn eg penalty on %c%c: %d\n", 'a'+file, '1'+rank, ENDGAME_BACKWARD_PAWN);
                 }
             } else {
                 // Supported pawns are good
@@ -142,28 +177,28 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     sq1behind = (1ull << (square - 8));
                 }
                 if (file != 0) {
-                    supporters |= (sq1behind >> 1);
+                    supporters |= RIGHT(sq1behind);
                 }
                 if (file != 7) {
-                    supporters |= (sq1behind << 1);
+                    supporters |= LEFT(sq1behind);
                 }
                 if (supporters & board->pieces[who][PAWN]) {
                     subscore += MIDGAME_SUPPORTED_PAWN;
-                    subscore_eg += 3;
+                    subscore_eg += ENDGAME_SUPPORTED_PAWN;
                     DPRINTF("Supported pawn bonus on %c%c: %d\n", 'a'+file, '1'+rank, MIDGAME_SUPPORTED_PAWN);
                     DPRINTF("Supported pawn eg bonus on %c%c: %d\n", 'a'+file, '1'+rank, 3);
                 }
             }
 
             // doubled pawns are bad
-            if (!penalized && (ahead & (board->pieces[who][PAWN]))) {
+            if (ahead & (board->pieces[who][PAWN])) {
                 int other = LSBINDEX(ahead & board->pieces[who][PAWN]);
                 subscore += doubled_pawn_penalty[file] / abs(other/8 - rank);
-                subscore_eg -= doubled_pawn_penalty_endgame[file] / abs(other/8 - rank);
+                subscore_eg += doubled_pawn_penalty_endgame[file] / abs(other/8 - rank);
                 DPRINTF("Double pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank,
                         doubled_pawn_penalty[file] / abs(other/8 - rank));
                 DPRINTF("Double pawn eg penalty on %c%c: %d\n", 'a'+file, '1'+rank,
-                        -doubled_pawn_penalty_endgame[file] / abs(other/8 - rank));
+                        doubled_pawn_penalty_endgame[file] / abs(other/8 - rank));
             }
 
             // passed pawns are good
@@ -193,13 +228,19 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             if (file != 7) mask |= (AFILE << (file + 1));
             if (!penalized && !(mask & board->pieces[who][PAWN])) {
                 subscore += isolated_pawn_penalty[file];
-                subscore_eg -= isolated_pawn_penalty_endgame[file];
+                subscore_eg += isolated_pawn_penalty_endgame[file];
                 DPRINTF("Isolated pawn penalty on %c%c: %d\n", 'a'+file, '1'+rank,
                         isolated_pawn_penalty[file]);
             }
         }
 
         stored->holes[who] = ~(attack_set_pawn_multiple_capture[who])(advance_mask[who], 0, ~0ull);
+        stored->rear_span[who] = rear_span[who];
+        stored->passed_pawn_advance_span[who] = 0;
+        bmloop(stored->passed_pawns[who], square, temp) {
+            int file = square & 0x7;
+            stored->passed_pawn_advance_span[who] = advance_mask[who] & (AFILE << file);
+        }
 
         // If you have no pawns, endgames will be hard
         if (!count) {

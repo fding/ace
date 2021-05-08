@@ -57,4 +57,6 @@ int main(int argc, char* argv[]) {
     int score = engine_score();
     engine_print();
     printf("Score: %d\n", score);
+    score = engine_qsearch_score();
+    printf("Qsearch Score: %d\n", score);
 }

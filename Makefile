@@ -1,5 +1,5 @@
 CC=clang
-CFLAGS=-L. -Ofast  -Wall -Wno-char-subscripts -mpopcnt -mlzcnt
+CFLAGS=-L. -Ofast  -Wall -Wno-char-subscripts -mpopcnt -mlzcnt -no-pie
 
 all: CFLAGS+= -fprofile-instr-use=code.profdata
 all: libace.a chess perft benchmark init ace-uci score score_debug

@@ -82,11 +82,12 @@ static struct option long_options[] = {
 
 int main(int argc, char* argv[]) {
     int c;
+    int eval = 0;
     int depth;
     char position[256] = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     while (1) {
         int option_index = 0;
-        c = getopt_long(argc, argv, "s:d:", long_options, &option_index);
+        c = getopt_long(argc, argv, "s:d:e", long_options, &option_index);
   
         if (c == -1)
             break;
@@ -96,6 +97,10 @@ int main(int argc, char* argv[]) {
                 break;
             case 'd':
                 depth = atoi(optarg) - 1;
+                break;
+            case 'e':
+                eval = 1;
+                break;
             case '?':
                 break;
   
@@ -115,7 +120,9 @@ int main(int argc, char* argv[]) {
     check = 0;
     castles = 0;
     promotions = 0;
-    engine_perft(depth, depth, engine_get_who(), &count, &enpassants, &captures, &check, &promotions, &castles);
+    int eval_score = 0;
+    engine_perft(depth, depth, engine_get_who(), &count, &enpassants, &captures, &check, &promotions, &castles,
+                 eval, &eval_score);
     clock_t end = clock();
     printf("Perft: %llu nodes in %.2f s (%.2f moves/sec)\n"
             "%llu captures, %llu enpassants, %llu checks, %llu promotions, %llu castles\n",
