@@ -1,7 +1,9 @@
 import os
-import subprocess
 import time
 import sys
+
+import chess
+import chess.engine
 
 TACTICS = ('Tactics', [
     # Mate in 3
@@ -1472,10 +1474,11 @@ for tname, tcases in [ TACTICS, POSITIONAL_UNDERMINING,
     score = 0
     print('%s: ' % tname)
     i = 0
-    for i, (fen, move) in enumerate(tcases):
+    for i, (fen, moves) in enumerate(tcases):
         if i > 10:
             i -= 1
             break
+        engine = chess.engine.SimpleEngine.popen_uci("./ace-uci")
         with open("testinput", "w") as f:
             f.write("exit\n")
         with open("testinput", "r") as f:
@@ -1485,13 +1488,16 @@ for tname, tcases in [ TACTICS, POSITIONAL_UNDERMINING,
                 white = 'c'
             else:
                 black = 'c'
-            output = subprocess.check_output(["./chess", "--white", white, "--black", black, "--depth", "10", "--starting", fen], stderr=FNULL, stdin=f)
-            output = output.decode("utf8")
-            if output.strip() in move:
+            board = chess.Board(fen=fen)
+            move = engine.play(
+                board, chess.engine.Limit(time=5)).move
+            output = board.san(move).replace("+", "")
+            if output.strip() in moves:
                 print('Selected best move for "%s"' % fen)
                 score += 1
             else:
-                print('Selected %s instead of %s for "%s"' % (output.strip(), ';'.join(move), fen))
+                print('Selected %s instead of %s for "%s"' % (output.strip(), ';'.join(moves), fen))
+        engine.close()
 
     print('Final score: %.2f' % (score / float(i + 1)))
 

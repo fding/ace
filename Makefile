@@ -2,7 +2,7 @@ CC=clang
 CFLAGS=-L. -Ofast  -Wall -Wno-char-subscripts -mpopcnt -mlzcnt -no-pie
 
 all: CFLAGS+= -fprofile-instr-use=code.profdata
-all: libace.a chess perft benchmark init ace-uci score score_debug
+all: libace.a perft benchmark ace-uci score score_debug
 
 instrument: CFLAGS+= -fprofile-instr-generate
 instrument: benchmark
@@ -51,25 +51,14 @@ libace_debug.a: board.c board.h parse.c engine.c search.c search.h util.c util.h
 clean:
 	rm -f *.o libace.a
 
-
 score: libace.a score.c
 	$(CC) $(CFLAGS) score.c -lace -o score
 
 score_debug: libace_debug.a score.c
 	$(CC) $(CFLAGS) -D DEBUG score.c -lace_debug -o score_debug
 
-init: libace.a init.c
-	$(CC) $(CFLAGS) init.c -lace -o init
-
-openings.acebase: init openings.txt
-	rm -f openings.acebase
-	./init openings.txt
-
 ace-uci: libace.a ace_uci.c
 	$(CC) $(CFLAGS) ace_uci.c -lace -o ace-uci -pthread
-
-chess: libace.a main.c openings.acebase
-	$(CC) $(CFLAGS) main.c -lace -o chess
 
 perft: perft.c libace.a
 	$(CC) $(CFLAGS) perft.c -lace -o perft

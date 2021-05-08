@@ -912,101 +912,79 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
         10, 10, 10, 10, 10, 10, 10, 10,
         10, 10, 10, 10, 10, 10, 10, 10,
     };
-    /*
-    static int leeway_table[32] = {90, 50, 40, 30, 30, 30, 25, 25,
-        20, 20, 20, 20, 10, 10, 10, 10,
-        10, 10, 10, 10, 10, 10, 10, 10,
-        10, 10, 10, 10, 10, 10, 10, 10,
-    };
-    */
-    /*
-    static int leeway_table[32] = {200, 100, 80, 80, 50, 40, 40, 40,
-        40, 40, 40, 40, 10, 10, 10, 10,
-        10, 10, 10, 10, 10, 10, 10, 10,
-        10, 10, 10, 10, 10, 10, 10, 10,
-    };
-     */
 
     timer_start(timer);
 
-    if (!infinite && ((flags & FLAGS_USE_OPENING_TABLE) &&
-            opening_table_read(board->hash, &best) == 0)) {
-        fprintf(stderr, "Applying opening...\n");
-        out_of_time = 0;
-        ply = 0;
+    int maxdepth;
+
+    if (flags & FLAGS_DYNAMIC_DEPTH) {
+        maxdepth = 100 * ONE_PLY;
     } else {
-        move_t temp;
-        int maxdepth;
+        maxdepth = 10 * ONE_PLY;
+    }
 
-        if (flags & FLAGS_DYNAMIC_DEPTH) {
-            maxdepth = 100 * ONE_PLY;
-        } else {
-            maxdepth = 10 * ONE_PLY;
-        }
+    ply = 0;
+    // A depth-4 search should always be accomplishable within the time limit
+    s = search(board, timer, &best, NULL, 4 * ONE_PLY, -INFINITY, INFINITY, 0, 0 /* null-mode */, who);
+    prev_score[who] = s;
+    temp = best;
+    // Iterative deepening
+    for (d = 6 * ONE_PLY; d < maxdepth; d += ONE_PLY) {
+        tt_hits = 0;
+        tt_tot = 0;
+        // Aspirated search: we hope that the score is between alpha and beta.
+        // If so, then we have greatly increased search speed.
+        // If not, we have to restart search
+        alpha = prev_score[who] - leeway_table[(d-6 * ONE_PLY)/ONE_PLY];
+        beta = prev_score[who] + leeway_table[(d-6 * ONE_PLY)/ONE_PLY];
+        int changea = leeway_table[(d-ONE_PLY)/ONE_PLY];
+        int changeb = leeway_table[(d-ONE_PLY)/ONE_PLY];
+        while (1) {
+            ply = 0;
+            s = search(board, timer, &best, NULL, d, alpha, beta, 5 * ONE_PLY, 0 /* null-mode */, who);
+            if (out_of_time)
+                break;
 
-        ply = 0;
-        // A depth-4 search should always be accomplishable within the time limit
-        s = search(board, timer, &best, NULL, 4 * ONE_PLY, -INFINITY, INFINITY, 0, 0 /* null-mode */, who);
-        prev_score[who] = s;
-        temp = best;
-        // Iterative deepening
-        for (d = 6 * ONE_PLY; d < maxdepth; d += ONE_PLY) {
-    tt_hits = 0;
-    tt_tot = 0;
-            // Aspirated search: we hope that the score is between alpha and beta.
-            // If so, then we have greatly increased search speed.
-            // If not, we have to restart search
-            alpha = prev_score[who] - leeway_table[(d-6 * ONE_PLY)/ONE_PLY];
-            beta = prev_score[who] + leeway_table[(d-6 * ONE_PLY)/ONE_PLY];
-            int changea = leeway_table[(d-ONE_PLY)/ONE_PLY];
-            int changeb = leeway_table[(d-ONE_PLY)/ONE_PLY];
-            while (1) {
-                ply = 0;
-                s = search(board, timer, &best, NULL, d, alpha, beta, 5 * ONE_PLY, 0 /* null-mode */, who);
-                if (out_of_time)
-                    break;
-
-                if (s <= alpha) {
-                    alpha = alpha - changea;
-                    changea *= 4;
-                }
-                else if (s >= beta) {
-                    beta = beta + changeb;
-                    changeb *= 4;
-                } else {
-                    assert(best.piece != -1);
-                    break;
-                }
+            if (s <= alpha) {
+                alpha = alpha - changea;
+                changea *= 4;
             }
-            if (out_of_time) {
-                if (best.piece == -1)
-                    best = temp;
-                s = prev_score[who];
+            else if (s >= beta) {
+                beta = beta + changeb;
+                changeb *= 4;
+            } else {
+                assert(best.piece != -1);
                 break;
             }
-            else {
-                prev_score[who] = s;
-                timer_advise(timer, !move_equal(temp, best));
-                temp = best;
-                if (flags & FLAGS_UCI_MODE) {
-                    printf("info depth %d ", d / ONE_PLY);
-                    printf("score ");
-                    if (is_checkmate(s)) {
-                        if (s > 0)
-                            printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
-                        else
-                            printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
-                    }
-                    else {
-                        printf("cp %d ", s);
-                    }
-                    printf("time %lu pv", (clock() - start) * 1000 / CLOCKS_PER_SEC);
-                    print_pv(board, d / ONE_PLY);
-                    printf("\n");
+        }
+        if (out_of_time) {
+            if (best.piece == -1)
+                best = temp;
+            s = prev_score[who];
+            break;
+        }
+        else {
+            prev_score[who] = s;
+            timer_advise(timer, !move_equal(temp, best));
+            temp = best;
+            if (flags & FLAGS_UCI_MODE) {
+                printf("info depth %d ", d / ONE_PLY);
+                printf("score ");
+                if (is_checkmate(s)) {
+                    if (s > 0)
+                        printf("mate %d ", (1 + CHECKMATE - s - board->nmoves)/2);
+                    else
+                        printf("mate -%d ", (1 + s + CHECKMATE - board->nmoves)/2);
                 }
-                if (!infinite && is_checkmate(s)) {
-                    break;
+                else {
+                    printf("cp %d ", s);
                 }
+                printf("time %lu pv", (clock() - start) * 1000 / CLOCKS_PER_SEC);
+                print_pv(board, d / ONE_PLY);
+                printf("\n");
+            }
+            if (!infinite && is_checkmate(s)) {
+                break;
             }
         }
     }
