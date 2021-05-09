@@ -41,6 +41,7 @@ volatile int signal_stop = 0;
 int material_table[6] = {100, 500, 300, 300, 900, 30000};
 
 struct killer_slot {
+    move_t mate_killer;
     move_t m1;
     move_t m2;
 };
@@ -74,9 +75,9 @@ static void ttable_update_with_hash(int loc, union transposition * update, int c
             if (secondary_entry->metadata.hash == update->metadata.hash) {
                 *secondary_entry = *update;
             } else {
-                if (update->metadata.depth >= entry->metadata.depth)
+                if (update->metadata.depth >= entry->metadata.depth) {
                     *entry = *update;
-                else {
+                } else {
                     if (secondary_entry->metadata.depth >= entry->metadata.depth) {
                         *entry = *secondary_entry;
                     }
@@ -90,6 +91,7 @@ static void ttable_update_with_hash(int loc, union transposition * update, int c
                 *secondary_entry = *update;
             } else {
                 *entry = *update;
+                ttable_stored_count++;
             }
         } else {
             *entry = *update;
@@ -139,9 +141,11 @@ static void print_pv(struct board* board, int depth) {
 }
 
 // Update killers for given ply
-static void update_killer(int ply, move_t* m) {
+static void update_killer(int ply, move_t* m, int beta) {
     // TODO: enforce not equal?
-    if (!move_equal(*m, killer[ply].m1)) {
+    if (beta > CHECKMATE/2) {
+        move_copy(&killer[ply].mate_killer, m);
+    } else if (!move_equal(*m, killer[ply].m1)) {
         move_copy(&killer[ply].m2, &killer[ply].m1);
         move_copy(&killer[ply].m1, m);
     }
@@ -216,9 +220,12 @@ struct sorted_move_iterator {
     int scores[256];
     move_t* moves;
     move_t* move;
-    int idx;
-    int end;
-    int sorted_count;
+    uint64_t undefended;
+    int16_t idx;
+    uint8_t depth;
+    uint8_t end;
+    uint8_t sorted_count;
+    uint8_t finished_tablemove;
 };
 
 #define SORTPHASE0 200000000
@@ -245,8 +252,14 @@ struct sorted_move_iterator {
 static void sorted_move_iterator_score(struct sorted_move_iterator* move_iter, struct board* board, char who, int phase, int start) {
     for (int i = start; i < move_iter->end; i++) {
         int see = move_see(board, &move_iter->moves[i]);
+        int non_queen_promotion = move_iter->moves[i].piece != move_iter->moves[i].promotion && move_iter->moves[i].promotion != QUEEN;
         if (phase == 0) {
-            if (see > 0) {
+            if (move_equal(move_iter->moves[i], killer[ply].mate_killer)) {
+                move_iter->scores[i] = SORTPHASE1 + 30000;
+                move_iter->sorted_count += 1;
+                continue;
+            }
+            if (see > 0 && !non_queen_promotion) {
                 move_iter->scores[i] = SORTPHASE1 + see;
                 move_iter->sorted_count += 1;
                 continue;
@@ -271,8 +284,7 @@ static void sorted_move_iterator_score(struct sorted_move_iterator* move_iter, s
         int history_score = history[who][move_iter->moves[i].square1][move_iter->moves[i].square2];
         history_score = MIN(history_score, PHASEGAP);
 
-        if (move_iter->moves[i].captured != -1 ||
-                move_iter->moves[i].promotion != move_iter->moves[i].piece) {
+        if (move_iter->moves[i].captured != -1) {
             if (check_move) {
                 move_iter->scores[i] = SORTPHASE4 + see;
                 move_iter->sorted_count += 1;
@@ -284,12 +296,14 @@ static void sorted_move_iterator_score(struct sorted_move_iterator* move_iter, s
                 continue;
             }
         }
+
+        int undefended = move_iter->undefended & (1ull << move_iter->moves[i].square2) ? -material_table[move_iter->moves[i].piece] : 0;
         if (check_move) {
-            move_iter->scores[i] = SORTPHASE6 + history_score;
+            move_iter->scores[i] = SORTPHASE6 + history_score + undefended;
             move_iter->sorted_count += 1;
             continue;
         }
-        move_iter->scores[i] = SORTPHASE7 + history_score + see;
+        move_iter->scores[i] = SORTPHASE7 + history_score + see + undefended;
         move_iter->sorted_count += 1;
     }
 }
@@ -301,12 +315,11 @@ static int sorted_move_iterator_next(struct sorted_move_iterator* move_iter, str
     }
     if (move_iter->idx == 0 && table_move->piece != -1) {
         move_iter->move = table_move;
-        move_iter->sorted_count += 1;
         return 1;
     }
 
     int besti = move_iter->idx;
-    if (move_iter->idx <= 1) {
+    if (!move_iter->finished_tablemove) {
         if (table_move->piece != -1) {
             for (int i = 1; i < move_iter->end; i++) {
                 if (move_equal(*table_move, move_iter->moves[i])) {
@@ -317,14 +330,16 @@ static int sorted_move_iterator_next(struct sorted_move_iterator* move_iter, str
                     break;
                 }
             }
+            move_iter->sorted_count += 1;
         }
         sorted_move_iterator_score(move_iter, board, who, 0, move_iter->sorted_count);
+        move_iter->finished_tablemove = 1;
     }
     if (move_iter->idx >= move_iter->sorted_count) {
         sorted_move_iterator_score(move_iter, board, who, 1, move_iter->sorted_count);
     }
     for (int i = move_iter->idx + 1; i < move_iter->end; i++) {
-        if (move_iter->scores[i] > move_iter->scores[move_iter->idx]) {
+        if (move_iter->scores[i] > move_iter->scores[besti]) {
             besti = i;
         }
     }
@@ -338,18 +353,24 @@ static int sorted_move_iterator_next(struct sorted_move_iterator* move_iter, str
     move_copy(&tm, &move_iter->moves[besti]);
     move_copy(&move_iter->moves[besti], &move_iter->moves[move_iter->idx]);
     move_copy(&move_iter->moves[move_iter->idx], &tm);
+    int tmp;
+    tmp = move_iter->scores[besti];
     move_iter->scores[besti] = move_iter->scores[move_iter->idx];
+    move_iter->scores[move_iter->idx] = tmp;
 
     move_iter->move = &move_iter->moves[move_iter->idx];
     return 1;
 }
 
-static void sorted_move_iterator_init(struct sorted_move_iterator* move_iter, struct board* board, char who, struct deltaset* set, move_t * tablemove) {
+static void sorted_move_iterator_init(struct sorted_move_iterator* move_iter, struct board* board, char who, struct deltaset* set, move_t * tablemove, int depth) {
     move_iter->idx = -1;
     move_iter->move = NULL;
     move_iter->moves = set->moves;
     move_iter->end = set->nmoves;
     move_iter->sorted_count = 0;
+    move_iter->finished_tablemove = 0;
+    move_iter->undefended = set->undefended_squares;
+    move_iter->depth = depth;
 }
 
 
@@ -602,6 +623,9 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         }
     }
 
+    int is_pv_node = beta > alpha + 1;
+    int orig_alpha = alpha;
+
     struct deltaset out;
     union transposition transposition;
     move_t temp;
@@ -632,6 +656,20 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     seen[ply] = board->hash;
     ply++;
 
+    move_t tablemove;
+    tablemove.piece = -1;
+
+    // Look in the transposition table to see if we have seen the position before,
+    // and if so, return the score if possible.
+    // Even if we can't return the score due to lack of depth,
+    // the stored move is probably good, so we can improve the pruning
+    int res = ttable_search(board, who, depth, best, &tablemove, &alpha, beta);
+    if (res == 0) {
+        ply--;
+        short_circuit_count++;
+        return alpha;
+    }
+
     // Check if we are out of time. If so, abort
     // Since clock() is costly, don't do this all the time!
     if (branches % 65536 == 0) {
@@ -648,7 +686,6 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     nmoves = out.nmoves;
 
     if (extensions > 0 && !nullmode) {
-    /*
         if (out.check) {
             if (prev) {
                 reverse_move(board, prev);
@@ -661,7 +698,6 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
                 }
             }
         }
-    */
         if (nmoves <= 2) {
             depth += ONE_PLY;
             extensions -= ONE_PLY;
@@ -687,35 +723,9 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         return score;
     }
 
-    move_t tablemove;
-    tablemove.piece = -1;
-
-    // Look in the transposition table to see if we have seen the position before,
-    // and if so, return the score if possible.
-    // Even if we can't return the score due to lack of depth,
-    // the stored move is probably good, so we can improve the pruning
-    int res = ttable_search(board, who, depth, best, &tablemove, &alpha, beta);
-    if (res == 0) {
-        ply--;
-        short_circuit_count++;
-        return alpha;
-    }
-
     initial_score = board_score(board, who, &out, alpha, beta);
     if (who) initial_score = -initial_score;
 
-    // Razoring (TODO: check if a pawn is promotable)
-    /*
-    if (depth < 3 * ONE_PLY && !out.check && nmoves > 1 && beta == alpha + 1
-            && initial_score + 400 <= alpha && tablemove.piece == -1) {
-        score = qsearch(board, timer, 32 * ONE_PLY, alpha, beta, who);
-        if (score < alpha - 300) {
-            ply--;
-            return score;
-        }
-    }
-    */
-    
     // Null pruning:
     // If we skip a move, and the move is still bad for the oponent,
     // then our move must have been great
@@ -747,12 +757,12 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     }
 
     // Internal iterative depening
-    if (beta > alpha + 1 && tablemove.piece == -1 && depth >= 6 * ONE_PLY && !nullmode) {
+    if (is_pv_node && tablemove.piece == -1 && depth >= 6 * ONE_PLY && !nullmode) {
         search(board, timer, &tablemove, prev, depth - depth / 4 - ONE_PLY, alpha, beta, 0, nullmode, who);
     }
 
     struct sorted_move_iterator iter;
-    sorted_move_iterator_init(&iter, board, who, &out, &tablemove);
+    sorted_move_iterator_init(&iter, board, who, &out, &tablemove, depth / ONE_PLY);
 
     int allow_prune = !out.check && (nmoves > 6) && !extended;
     int checked_one_capture = 0;
@@ -790,7 +800,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
         apply_move(board, move);
         int skip_deep_search = 0;
-        int allow_lmr = allow_prune && depth >= 4 * ONE_PLY && (((i > 2 && beta == alpha + 1)) || (i >= 4 && move->captured == -1
+        int allow_lmr = allow_prune && depth >= 4 * ONE_PLY && (((i > 2 && !is_pv_node)) || (i >= 4 && move->captured == -1
                     && move->promotion == move->piece && alpha > -CHECKMATE/2 && beta < CHECKMATE/2));
         if (allow_lmr) {
             uint64_t occupancy = board_occupancy(board, 0) | board_occupancy(board, 1);
@@ -842,10 +852,10 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         }
         if (beta <= alpha) {
             beta_cutoff_count += 1;
-            if (move->captured == -1)
-                update_killer(ply, move);
-            type = BETA_CUTOFF | MOVESTORED;
+            // TODO: Check if in null-pruning, in pv node? check is capture?
+            update_killer(ply, move, alpha);
             history[who][move->square1][move->square2] += (depth / ONE_PLY) * (depth / ONE_PLY);
+            type = BETA_CUTOFF | MOVESTORED;
             break;
         }
     }
@@ -893,6 +903,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
 
     tt_hits = 0;
     tt_tot = 0;
+    memset(killer, 0, sizeof(killer));
 
     for (int w = 0; w < 2; w++) {
         for (int sq1 = 0; sq1 < 64; sq1++) {
@@ -991,7 +1002,7 @@ move_t find_best_move(struct board* board, struct timer* timer, char who, char f
 
     fprintf(stderr, "Best scoring move is %s: %.2f\n", buffer, s/100.0);
     fprintf(stderr, "Searched %d moves (%d main branches), #alpha: %d, #beta: %d, "
-                    "shorts: %d, depth: %d, TT hits: %.5f, Eval hits: %.5f, total table usage: %d\n",
+                    "shorts: %d, depth: %d, TT hits: %.5f, Eval hits: %.5f, total table usage: %d (out of %d)\n",
             branches, main_branches, alpha_cutoff_count, beta_cutoff_count, short_circuit_count, d / ONE_PLY,
             tt_hits/((float) tt_tot), evaluation_cache_hits / ((float) evaluation_cache_calls), ttable_stored_count);
     return best;

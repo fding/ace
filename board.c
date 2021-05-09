@@ -373,7 +373,7 @@ uint64_t board_occupancy(struct board* board, side_t who) {
 }
 
 static void deltaset_add_move(struct board* board, side_t who, struct deltaset * out,
-        int piece, int square1, uint64_t attacks, uint64_t friendly, uint64_t enemy) {
+        int piece, int square1, uint64_t attacks, uint64_t friendly, uint64_t enemy, int promotion_limit) {
     uint64_t temp;
     uint64_t mask1, mask2;
     int square2;
@@ -390,7 +390,7 @@ static void deltaset_add_move(struct board* board, side_t who, struct deltaset *
                 continue;
         }
         if (piece == PAWN && (mask2 & (RANK1 | RANK8))) {
-            for (j = 1; j < 5; j++) {
+            for (j = 1; j < promotion_limit; j++) {
                 k = sorted_pieces[j];
                 out->moves[i].misc = 0;
                 out->moves[i].promotion = k;
@@ -499,6 +499,7 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
 
     // Find all squares that the opponent attacks. These are squares that the king cannot move to.
     opponent_attacks = attacked_squares(board, 1-who, enemy_occupancy | (friendly_occupancy ^ king));
+    mvs->undefended_squares = opponent_attacks & ~attacked_squares(board, who, enemy_occupancy | (friendly_occupancy ^ king));
     mvs->opponent_attacks = opponent_attacks;
 
     // Find the pieces that are giving check
@@ -512,7 +513,7 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
     if (check_count == 2) {
         attack = attack_set_king(kingsquare, friendly_occupancy, enemy_occupancy);
         attack = ~opponent_attacks & attack;
-        deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy);
+        deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy, 5);
         mvs->my_attacks |= attack;
         return;
     }
@@ -538,7 +539,7 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
         }
         else {
             attack = attack_set_knight(square, friendly_occupancy, enemy_occupancy) & mask;
-            deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy);
+            deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy, 5);
             mvs->my_attacks |= attack;
         }
     }
@@ -552,7 +553,7 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
         } else {
             attack = attack_set_bishop(square, friendly_occupancy, enemy_occupancy) & mask;
         }
-        deltaset_add_move(board, who, mvs, BISHOP, square, attack, friendly_occupancy, enemy_occupancy);
+        deltaset_add_move(board, who, mvs, BISHOP, square, attack, friendly_occupancy, enemy_occupancy, 5);
         mvs->my_attacks |= attack;
     }
 
@@ -575,7 +576,7 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
         } else {
             attack &= mask;
         }
-        deltaset_add_move(board, who, mvs, PAWN, square, attack, friendly_occupancy, enemy_occupancy);
+        deltaset_add_move(board, who, mvs, PAWN, square, attack, friendly_occupancy, enemy_occupancy, 5);
         mvs->my_attacks |= attack;
     }
 
@@ -588,7 +589,7 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
         } else {
             attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask;
         }
-        deltaset_add_move(board, who, mvs, QUEEN, square, attack, friendly_occupancy, enemy_occupancy);
+        deltaset_add_move(board, who, mvs, QUEEN, square, attack, friendly_occupancy, enemy_occupancy, 5);
         mvs->my_attacks |= attack;
     }
 
@@ -601,14 +602,14 @@ void generate_moves(struct deltaset* mvs, struct board* board) {
         } else {
             attack = attack_set_rook(square, friendly_occupancy, enemy_occupancy) & mask;
         }
-        deltaset_add_move(board, who, mvs, ROOK, square, attack, friendly_occupancy, enemy_occupancy);
+        deltaset_add_move(board, who, mvs, ROOK, square, attack, friendly_occupancy, enemy_occupancy, 5);
         mvs->my_attacks |= attack;
     }
 
     // King
     attack = attack_set_king(kingsquare, friendly_occupancy, enemy_occupancy);
     attack = ~opponent_attacks & attack;
-    deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy);
+    deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy, 5);
     mvs->my_attacks |= attack;
     
     // Castling
@@ -734,6 +735,21 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
     uint64_t pawn_mask = mask | RANK1 | RANK8;
 
     // The following are ordered in likelihood that moving the piece is a good move
+
+    // Pawns
+    bmloop(board->pieces[who][PAWN], square, temp) {
+        if ((1ull << square) & pinned) {
+            bmloop(pinners, pinsq, pintemp) {
+                pinmask = ray_between(kingsquare, pinsq);
+                if (pinmask & (1ull << square)) break;
+            }
+            attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pinmask & pawn_mask;
+        } else {
+            uint64_t attackset =attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy);
+            attack = attackset & pawn_mask;
+        }
+        deltaset_add_move(board, who, mvs, PAWN, square, attack, friendly_occupancy, enemy_occupancy, 2);
+    }
     // Knights
     bmloop(board->pieces[who][KNIGHT], square, temp) {
         if ((1ull << square) & pinned) {
@@ -742,7 +758,7 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
         }
         else {
             attack = attack_set_knight(square, friendly_occupancy, enemy_occupancy) & mask;
-            deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy);
+            deltaset_add_move(board, who, mvs, KNIGHT, square, attack, friendly_occupancy, enemy_occupancy, 2);
         }
     }
 
@@ -757,36 +773,7 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
         } else {
             attack = attack_set_bishop(square, friendly_occupancy, enemy_occupancy) & mask;
         }
-        deltaset_add_move(board, who, mvs, BISHOP, square, attack, friendly_occupancy, enemy_occupancy);
-    }
-
-    // Pawns
-    bmloop(board->pieces[who][PAWN], square, temp) {
-        if ((1ull << square) & pinned) {
-            bmloop(pinners, pinsq, pintemp) {
-                pinmask = ray_between(kingsquare, pinsq);
-                if (pinmask & (1ull << square)) break;
-            }
-            attack = attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy) & pinmask & pawn_mask;
-        } else {
-            uint64_t attackset =attack_set_pawn_capture[who](square, board->enpassant, friendly_occupancy, enemy_occupancy);
-            attack = attackset & pawn_mask;
-        }
-        deltaset_add_move(board, who, mvs, PAWN, square, attack, friendly_occupancy, enemy_occupancy);
-    }
-
-    // Queens
-    bmloop(board->pieces[who][QUEEN], square, temp) {
-        if ((1ull << square) & pinned) {
-            bmloop(pinners, pinsq, pintemp) {
-                pinmask = ray_between(kingsquare, pinsq);
-                if (pinmask & (1ull << square)) break;
-            }
-            attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask & pinmask;
-        } else {
-            attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask;
-        }
-        deltaset_add_move(board, who, mvs, QUEEN, square, attack, friendly_occupancy, enemy_occupancy);
+        deltaset_add_move(board, who, mvs, BISHOP, square, attack, friendly_occupancy, enemy_occupancy, 2);
     }
 
     // Rooks
@@ -800,12 +787,26 @@ void generate_captures(struct deltaset* mvs, struct board* board) {
         } else {
             attack = attack_set_rook(square, friendly_occupancy, enemy_occupancy) & mask;
         }
-        deltaset_add_move(board, who, mvs, ROOK, square, attack, friendly_occupancy, enemy_occupancy);
+        deltaset_add_move(board, who, mvs, ROOK, square, attack, friendly_occupancy, enemy_occupancy, 2);
+    }
+
+    // Queens
+    bmloop(board->pieces[who][QUEEN], square, temp) {
+        if ((1ull << square) & pinned) {
+            bmloop(pinners, pinsq, pintemp) {
+                pinmask = ray_between(kingsquare, pinsq);
+                if (pinmask & (1ull << square)) break;
+            }
+            attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask & pinmask;
+        } else {
+            attack = attack_set_queen(square, friendly_occupancy, enemy_occupancy) & mask;
+        }
+        deltaset_add_move(board, who, mvs, QUEEN, square, attack, friendly_occupancy, enemy_occupancy, 2);
     }
 
     // King
     attack = attack_set_king(kingsquare, friendly_occupancy, enemy_occupancy);
     attack = ~opponent_attacks & attack & mask;
-    deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy);
+    deltaset_add_move(board, who, mvs, KING, kingsquare, attack, friendly_occupancy, enemy_occupancy, 2);
 }
 

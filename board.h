@@ -205,6 +205,7 @@ struct deltaset {
     side_t who;
     uint64_t pinned; // a bitmap of all pinned pieces
     uint64_t opponent_attacks;
+    uint64_t undefended_squares;
     uint64_t my_attacks;
 };
 
