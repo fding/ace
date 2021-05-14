@@ -7,8 +7,10 @@
 
 #include "board.h"
 #include "moves.h"
+#include "evaluation_parameters.h"
 #include "pieces.h"
 #include "search.h"
+#include "cJSON.h"
 
 const wchar_t pretty_piece_names[] = L"\x265f\x265c\x265e\x265d\x265b\x265a\x2659\x2656\x2658\x2657\x2655\x2654";
 
@@ -18,6 +20,8 @@ uint64_t ttable_size = 0;
 int hashmapsize = 16777216;
 
 void initialize_endgame_tables();
+void load_evaluation_params();
+void read_table(int* table, int max, const cJSON* source);
 
 struct {
     struct board board;
@@ -103,8 +107,143 @@ void engine_init(int flags) {
             exit(1);
         }
         memset(ttable, 0, hashmapsize * sizeof(struct ttable_entry));
+        load_evaluation_params();
     }
     state.flags = flags;
+}
+
+void load_evaluation_params() {
+    FILE* f = fopen("params.json", "r");
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    char *params_contents = malloc(fsize + 1);
+    fread(params_contents, 1, fsize, f);
+    fclose(f);
+    params_contents[fsize] = 0;
+    cJSON *params = cJSON_Parse(params_contents);
+    for (struct cJSON* head = params->child; head != NULL; head = head->next) {
+        if (strcmp(head->string, "MIDGAME_PAWN_VALUE") == 0) {
+            MIDGAME_PAWN_VALUE = head->valueint;
+        } else if (strcmp(head->string, "ENDGAME_PAWN_VALUE") == 0) {
+            ENDGAME_PAWN_VALUE = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_KNIGHT_VALUE") == 0) {
+            MIDGAME_KNIGHT_VALUE = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_BISHOP_VALUE") == 0) {
+            MIDGAME_BISHOP_VALUE = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_ROOK_VALUE") == 0) {
+            MIDGAME_ROOK_VALUE = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_QUEEN_VALUE") == 0) {
+            MIDGAME_QUEEN_VALUE = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_BISHOP_PAIR") == 0) {
+            MIDGAME_BISHOP_PAIR = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_ROOK_PAIR") == 0) {
+            MIDGAME_ROOK_PAIR = head->valueint;
+        } else if (strcmp(head->string, "HANGING_PIECE_PENALTY") == 0) {
+            HANGING_PIECE_PENALTY = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_BACKWARD_PAWN") == 0) {
+            MIDGAME_BACKWARD_PAWN = head->valueint;
+        } else if (strcmp(head->string, "MIDGAME_SUPPORTED_PAWN") == 0) {
+            MIDGAME_SUPPORTED_PAWN = head->valueint;
+        } else if (strcmp(head->string, "KNIGHT_OUTPOST_BONUS") == 0) {
+            KNIGHT_OUTPOST_BONUS = head->valueint;
+        } else if (strcmp(head->string, "KNIGHT_ALMOST_OUTPOST_BONUS") == 0) {
+            KNIGHT_ALMOST_OUTPOST_BONUS = head->valueint;
+        } else if (strcmp(head->string, "BISHOP_OUTPOST_BONUS") == 0) {
+            BISHOP_OUTPOST_BONUS = head->valueint;
+        } else if (strcmp(head->string, "BISHOP_ALMOST_OUTPOST_BONUS") == 0) {
+            BISHOP_ALMOST_OUTPOST_BONUS = head->valueint;
+        } else if (strcmp(head->string, "ROOK_OUTPOST_BONUS") == 0) {
+            ROOK_OUTPOST_BONUS = head->valueint;
+        } else if (strcmp(head->string, "ROOK_OPENFILE") == 0) {
+            ROOK_OPENFILE = head->valueint;
+        } else if (strcmp(head->string, "ROOK_SEMIOPENFILE") == 0) {
+            ROOK_SEMIOPENFILE = head->valueint;
+        } else if (strcmp(head->string, "ROOK_BLOCKED_FILE") == 0) {
+            ROOK_BLOCKEDFILE = head->valueint;
+        } else if (strcmp(head->string, "ROOK_TARASCH_BONUS") == 0) {
+            ROOK_TARASCH_BONUS = head->valueint;
+        } else if (strcmp(head->string, "QUEEN_XRAYED") == 0) {
+            QUEEN_XRAYED = head->valueint;
+        } else if (strcmp(head->string, "KING_XRAYED") == 0) {
+            KING_XRAYED = head->valueint;
+        } else if (strcmp(head->string, "PINNED_PENALTY") == 0) {
+            PINNED_PENALTY = head->valueint;
+        } else if (strcmp(head->string, "CFDE_PAWN_BLOCK") == 0) {
+            CFDE_PAWN_BLOCK = head->valueint;
+        } else if (strcmp(head->string, "KING_SEMIOPEN_FILE_PENALTY") == 0) {
+            KING_SEMIOPEN_FILE_PENALTY = head->valueint;
+        } else if (strcmp(head->string, "KING_OPEN_FILE_PENALTY") == 0) {
+            KING_OPEN_FILE_PENALTY = head->valueint;
+        } else if (strcmp(head->string, "CASTLE_OBSTRUCTION_PENALTY") == 0) {
+            CASTLE_OBSTRUCTION_PENALTY = head->valueint;
+        } else if (strcmp(head->string, "CAN_CASTLE_BONUS") == 0) {
+            CAN_CASTLE_BONUS = head->valueint;
+        } else if (strcmp(head->string, "TEMPO_BONUS") == 0) {
+            TEMPO_BONUS = head->valueint;
+        } else if (strcmp(head->string, "doubled_pawn_penalty") == 0) {
+            read_table(doubled_pawn_penalty, 8, head->child);
+        } else if (strcmp(head->string, "passed_pawn_table") == 0) {
+            read_table(passed_pawn_table, 8, head->child);
+        } else if (strcmp(head->string, "passed_pawn_table_endgame") == 0) {
+            read_table(passed_pawn_table_endgame, 8, head->child);
+        } else if (strcmp(head->string, "passed_pawn_blockade_table") == 0) {
+            read_table(passed_pawn_blockade_table, 8, head->child);
+        } else if (strcmp(head->string, "passed_pawn_blockade_table_endgame") == 0) {
+            read_table(passed_pawn_blockade_table_endgame, 8, head->child);
+        } else if (strcmp(head->string, "isolated_pawn_penalty") == 0) {
+            read_table(isolated_pawn_penalty, 8, head->child);
+        } else if (strcmp(head->string, "pawn_table") == 0) {
+            read_table(pawn_table, 64, head->child);
+        } else if (strcmp(head->string, "pawn_table_endgame") == 0) {
+            read_table(pawn_table_endgame, 64, head->child);
+        } else if (strcmp(head->string, "knight_table") == 0) {
+            read_table(knight_table, 64, head->child);
+        } else if (strcmp(head->string, "bishop_table") == 0) {
+            read_table(bishop_table, 64, head->child);
+        } else if (strcmp(head->string, "rook_table") == 0) {
+            read_table(rook_table, 64, head->child);
+        } else if (strcmp(head->string, "queen_table") == 0) {
+            read_table(queen_table, 64, head->child);
+        } else if (strcmp(head->string, "king_table") == 0) {
+            read_table(king_table, 64, head->child);
+        } else if (strcmp(head->string, "king_table_endgame") == 0) {
+            read_table(king_table_endgame, 64, head->child);
+        } else if (strcmp(head->string, "king_attacker_table") == 0) {
+            read_table(king_attacker_table, 24, head->child);
+        } else if (strcmp(head->string, "attack_count_table_rook") == 0) {
+            read_table(attack_count_table_rook, 16, head->child);
+        } else if (strcmp(head->string, "attack_count_table_queen") == 0) {
+            read_table(attack_count_table_queen, 29, head->child);
+        } else if (strcmp(head->string, "attack_count_bishop") == 0) {
+            read_table(attack_count_table_bishop, 15, head->child);
+        } else if (strcmp(head->string, "attack_count_knight") == 0) {
+            read_table(attack_count_table_knight, 9, head->child);
+        } else if (strcmp(head->string, "bishop_obstruction_table") == 0) {
+            read_table(bishop_obstruction_table, 9, head->child);
+        } else if (strcmp(head->string, "bishop_own_obstruction_table") == 0) {
+            read_table(bishop_own_obstruction_table, 9, head->child);
+        } else if (strcmp(head->string, "pawn_shield_table") == 0) {
+            read_table(pawn_shield_table, 100, head->child);
+        } else if (strcmp(head->string, "pawn_storm_table") == 0) {
+            read_table(pawn_storm_table, 100, head->child);
+        } else if (strcmp(head->string, "space_table") == 0) {
+            read_table(space_table, 32, head->child);
+        } else {
+            fprintf(stderr, "Unknown parameter: %s\n", head->string);
+        }
+    }
+    cJSON_Delete(params);
+    free(params_contents);
+}
+
+void read_table(int* table, int max, const cJSON* source) {
+    int i = 0;
+    for (struct cJSON* head = source; head != NULL; head = head->next) {
+        table[i] = head->valueint;
+        i++;
+        if (i >= max) break;
+    }
 }
 
 int engine_reset_hashmap(int hashsize) {

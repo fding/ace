@@ -21,40 +21,56 @@ OPENINGS = [
     (("e4", "e5", "Nf3", "Nc6", "Bb5", "a6"), "Ruy Lopez"),
     (("e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7", "Re1", "b5", "Bb3", "O-O", "c3", "d5"), "Ruy Lopez"),  # Marshall attack, included for sharpness
     (("e4", "e5", "Nf3", "Nc6", "Bb5", "Nf6"), "Ruy Lopez"),
-    (("e4", "e5", "Nf3", "Nc6", "Bc4"), "Giuco Piano"),
+    (("e4", "e5", "Nf3", "Nc6", "Bb5", "Nf6", "O-O", "Nxe4", "d4", "Nd6", "Bxc6", "dxc6", "dxe5", "Nf5", "Qxd8", "Kxd8"), "Ruy Lopez"),
+    (("e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "c3", "Nf6",), "Giuco Piano"),
+    (("e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "d3"), "Giuco Piano"),
     (("e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5", "b4"), "Gambit"),
     (("e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "Ng5", "d5", "exd5"), "Gambit"),
     # e4 e5: 5 openings
     (("e4", "c5"), "Sicilian"),
     (("e4", "c5", "Nc3"), "Closed Sicilian"),
+    (("e4", "c5", "Nc3", "Nc6", "g3", "g6", "Bg2", "Bg7"), "Closed Sicilian"),
     (("e4", "c5", "Nf3", "Nc6", "d4", "cxd4", "Nxd4",), "Open Sicilian"),
-    (("e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6"), "Open Sicilian"),
+    (("e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6", "Be3", "e5", "Nb3",), "Open Sicilian"),
+    (("e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "a6", "Bg5", "e6", "f4"), "Open Sicilian"),
     (("e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "g6"), "Open Sicilian"),
-    (("e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "Nc6"), "Open Sicilian"),
+    (("e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "g6", "Be3", "Bg7", "f3", "O-O", "Qd2", "Nc6"), "Open Sicilian"),
+    (("e4", "c5", "Nf3", "d6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "Nc6", "Bg5", "e6", "Qd2", "a6", "O-O-O"), "Open Sicilian"),
     (("e4", "c5", "Nf3", "d6", "Bb5"), "Sicilian Rossolimo"),
     (("e4", "c5", "Nf3", "e6", "d4", "cxd4", "Nxd4"), "Open Sicilian"),
     # Sicilian: 8 openings
-    (("e4", "e6", "d4", "d5", "Nc3"), "French"),
-    (("e4", "e6", "d4", "d5", "Nd2"), "French"),
+    (("e4", "e6", "d4", "d5", "Nc3", "Bb4", "e5", "c5"), "French"),
+    (("e4", "e6", "d4", "d5", "Nd2", "c5", "exd5"), "French"),
+    (("e4", "e6", "d4", "d5", "Nd2", "c5", "Ngf3"), "French"),
+    (("e4", "e6", "d4", "d5", "Nd2", "Nf6", "e5", "Nfd7", "Bd3", "c5"), "French"),
     # French: 2 openings
-    (("e4", "c6", "d4", "d5"), "Caro Kann"),
-    (("e4", "d6", "d4", "Nf6"), "Phillidor"),
+    (("e4", "c6", "d4", "d5", "e5", "Bf5"), "Caro Kann"),
+    (("e4", "c6", "d4", "d5", "Nc3", "dxe4", "Nxe4", "Bf5"), "Caro Kann"),
+    (("e4", "d6", "d4", "Nf6", "Nc3", "g6", ), "Phillidor"),
     # e4: 17 openings
     (("d4", "d5"), "D4 D5"),
     (("d4", "d5", "c4"), "Queens Gambit"),
-    (("d4", "d5", "c4", "e6"), "Queens Gambit Declined"),
-    (("d4", "d5", "c4", "c6"), "Slav defense"),
+    (("d4", "d5", "c4", "Nf6"), "Queens Gambit"),
+    (("d4", "d5", "c4", "e6", "Nc3", "Nf6", "Nf3", "c6", "e3", "Nbd7"), "Queens Gambit Declined"),
+    (("d4", "d5", "c4", "e6", "Nc3", "Nf6", "Nf3", "Be7", "Bg5"), "Queens Gambit Declined"),
+    (("d4", "d5", "c4", "e6", "Nf3", "Nf6", "g3", "dxc4", "Bg2"), "Queens Gambit Declined"),
+    (("d4", "d5", "c4", "c6", "Nf3", "Nf6", "Nc3", "dxc4", "a4", "Bf5"), "Queens Gambit"),
     (("d4", "Nf6"), "D4 Nf6"),
     (("d4", "Nf6", "Nf3", "g6"), "Kings Indian"),
     (("d4", "Nf6", "c4", "e6"), "D4 Nf6"),
     (("d4", "Nf6", "c4", "e6", "Nc3", "Bb4"), "Nimzo-Indian"),
+    (("d4", "Nf6", "c4", "e6", "Nf3", "b6", "g3"), "Nimzo-Indian"),
+    (("d4", "Nf6", "c4", "e6", "g3", "Bb4", "Bd2"), "Nimzo-Indian"),
+    (("d4", "Nf6", "c4", "c5", "d5", "b5", "cxb5", "a6"), "Gambit"),
     (("d4", "Nf6", "c4", "g6"), "Kings Indian"),
-    (("d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6", "Nf3", "O-O", "Be2"), "Kings Indian"),
+    (("d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6", "Nf3", "O-O", "Be2", "e5"), "Kings Indian"),
+    (("d4", "d5", "Bf4", "Nf6", "Nf3", "e6", "e3"), "London"),
     # d4: 10 openings
-    (("c4", "e5"), "English"),
+    (("c4", "e5", "Nc3", "Nf6"), "English"),
     (("c4", "Nf6"), "English"),
-    (("Nf3", "d5"), "Reti"),
-    (("Nf3", "Nf6", "c4"), "Reti"),
+    (("Nf3", "d5", "g3", "Nf6", "Bg2", "e6", "c4"), "Reti"),
+    (("Nf3", "d5", "g3", "Nf6", "Bg2", "c6", "O-O"), "Reti"),
+    (("Nf3", "Nf6", "c4", "e6", "g3", "d5", "Bg2", ), "Reti"),
     # 4 misc openings
 ]
 
@@ -63,8 +79,12 @@ score_for_opening = {}
 for opening, name in OPENINGS:
     board = chess.Board()
     score_for_opening[name] = [0, 0, 0]
-    for move in opening:
-        board.push_san(move)
+    try:
+        for move in opening:
+            board.push_san(move)
+    except ValueError as e:
+        print("Error in opening %s: %s" % (name, opening))
+        raise e
 random.shuffle(OPENINGS)
 print("Validated openings")
 

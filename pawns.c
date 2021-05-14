@@ -12,56 +12,6 @@ uint64_t hash(uint64_t wpawns, uint64_t bpawns) {
     return ((wpawns ^ bpawns) * 0x2480041000800801ull) & (PAWN_HASH_SIZE - 1);
 }
 
-int pawn_table[64] = {
-    800, 800, 800, 800, 800, 800, 800, 800,
-    -6, 7, -4, -2, -2, -4, 7, -6,
-    -7, -3, -3, 8, 8, -3, -3, -7,
-    -10, 0, 8, 15, 15, 8, 0, -10,
-    -14, -7, 14, 20, 20, 14, -7, -14,
-    -13, -3, 5, 7, 7, 5, -3, -13,
-    -10, -2, 0, 2, 2, 0, -2, -10,
-    0, 0, 0, 0, 0, 0, 0, 0
-};
-
-/*
-
-int pawn_table[64] = {
-    800, 800, 800, 800, 800, 800, 800, 800,
-    -6, 7, -4, -2, -2, -4, 7, -6,
-    -7, -6, -3, 8, 8, -3, -6, -7,
-    -7, 0, 8, 15, 15, 8, 0, -7,
-    -12, -7, 14, 20, 20, 14, -7, -12,
-    -13, -3, 5, 7, 7, 5, -3, -13,
-    -5, 0, 0, 2, 2, 0, 0, -5,
-    0, 0, 0, 0, 0, 0, 0, 0
-};
-*/
-
-int pawn_table_endgame[64] = {
-    800, 800, 800, 800, 800, 800, 800, 800,
-     35,  37,  38,  38,  38,  38,  37, 35,
-     23,  26,  29,  29,  29,  29,  26, 23,
-     14,  16,  18,  20,  20,  18,  16, 14,
-     7,  9,  10,  12,  12,  10,  9, 7,
-     0,  2,  3,  3,  3,  3,  2, 0,
-    -7, -5, -3, -3, -3, -3, -5, -7,
-    0, 0, 0, 0, 0, 0, 0, 0
-};
-
-/*
-int pawn_table_endgame[64] = {
-    800, 800, 800, 800, 800, 800, 800, 800,
-     125,  114,  98,  93,  93,  98,  114, 125,
-     50,  53,  43,  35,  35,  43,  53, 50,
-     14,  16,  18,  20,  20,  18,  16, 14,
-     7,  9,  10,  12,  12,  10,  9, 7,
-     0,  2,  3,  3,  3,  3,  2, 0,
-    -7, -5, -3, -3, -3, -3, -5, -7,
-    0, 0, 0, 0, 0, 0, 0, 0
-};
-*/
-
-
 struct pawn_structure * evaluate_pawns(struct board* board) {
     struct pawn_structure * stored;
     stored = &pawn_hashmap[board->pawn_hash & 0x1fff];
@@ -117,27 +67,27 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
             uint64_t ahead = (AFILE << file);
             uint64_t behind = (AFILE << file);
             if (who) {
-                ahead = ahead >> (8 * (7 - rank));
-                behind = behind << (8 * rank);
+                ahead = ahead >> (8 * (8 - rank));
+                behind = behind << (8 * (rank));
             }
             else {
-                ahead = ahead << (8 * rank);
+                ahead = ahead << (8 * (rank + 1));
                 behind = behind >> (8 * (7 - rank));
             }
 
-            ahead ^= (1ull << square);
             uint64_t passed_pawn_mask = ahead;
             uint64_t backward_mask = behind;
             if (file != 0) {
-                passed_pawn_mask |= (ahead >> 1);
-                backward_mask |= (behind >> 1);
+                passed_pawn_mask |= LEFT(ahead);
+                backward_mask |= LEFT(behind);
             }
             if (file != 7) {
-                passed_pawn_mask |= (ahead << 1);
-                backward_mask |= (behind << 1);
+                passed_pawn_mask |= RIGHT(ahead);
+                backward_mask |= RIGHT(behind);
             }
+            backward_mask ^= (1ull << square);
 
-            int rank7pawn = (((who == 0) && (rank == 6)) || ((who == 1) && (rank == 1)));
+            int rank7pawn = ((who == 0 && rank == 6) || (who == 1 && rank == 1));
             int penalized = 0;
 
             // backward pawns are bad
@@ -153,12 +103,12 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     sq2ahead = (1ull << (square + 16));
                 }
                 if (file != 0) {
-                    attackers |= RIGHT(sq1ahead);
-                    blockers |= RIGHT(sq2ahead);
-                }
-                if (file != 7) {
                     attackers |= LEFT(sq1ahead);
                     blockers |= LEFT(sq2ahead);
+                }
+                if (file != 7) {
+                    attackers |= RIGHT(sq1ahead);
+                    blockers |= RIGHT(sq2ahead);
                 }
                 if (!(attackers & board->pieces[1-who][PAWN]) && (blockers & board->pieces[1-who][PAWN])) {
                     penalized = 1;
@@ -177,10 +127,10 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                     sq1behind = (1ull << (square - 8));
                 }
                 if (file != 0) {
-                    supporters |= RIGHT(sq1behind);
+                    supporters |= LEFT(sq1behind);
                 }
                 if (file != 7) {
-                    supporters |= LEFT(sq1behind);
+                    supporters |= RIGHT(sq1behind);
                 }
                 if (supporters & board->pieces[who][PAWN]) {
                     subscore += MIDGAME_SUPPORTED_PAWN;
@@ -222,7 +172,7 @@ struct pawn_structure * evaluate_pawns(struct board* board) {
                 stored->passed_pawns[who] |= (1ull << square);
             }
 
-            mask = 0;
+            mask = 0ull;
             // isolated pawns are bad
             if (file != 0) mask |= (AFILE << (file - 1));
             if (file != 7) mask |= (AFILE << (file + 1));

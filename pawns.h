@@ -15,4 +15,7 @@ struct pawn_structure {
 
 struct pawn_structure * evaluate_pawns(struct board* board);
 
+#define PAWN_HASH_SIZE (1024 * 8)
+extern struct pawn_structure pawn_hashmap[PAWN_HASH_SIZE];
+
 #endif

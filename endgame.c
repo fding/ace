@@ -28,7 +28,7 @@ static int dist(int sq1, int sq2) {
 }
 
 static int material_for_player_endgame(struct board* board, side_t who) {
-    return 135 * popcnt(board->pieces[who][PAWN]) +
+    return ENDGAME_PAWN_VALUE * popcnt(board->pieces[who][PAWN]) +
         275 * popcnt(board->pieces[who][KNIGHT]) +
         300 * popcnt(board->pieces[who][BISHOP]) +
         550 * popcnt(board->pieces[who][ROOK]) +
@@ -372,11 +372,22 @@ int board_score_eg_positional(struct board* board, unsigned char who, struct del
     int wkingsquare, bkingsquare;
     wkingsquare = board->kingsq[0];
     bkingsquare = board->kingsq[1];
+    uint64_t passed_pawn_blockade[2];
+    passed_pawn_blockade[0] = pstruct->passed_pawns[0] << 8;
+    passed_pawn_blockade[1] = pstruct->passed_pawns[1] >> 8;
 
     for (int w = 0; w < 2; w++) {
         int file_occupied[8];
         int subscore = 0;
         memset(file_occupied, 0, 8 * sizeof(int));
+        bmloop(passed_pawn_blockade[1-w] & (minors[w] | majors[w] | kings[w]), square, temp) {
+            int rank;
+            if (w)
+                rank = square / 8;
+            else
+                rank = 7 - square / 8;
+            subscore += passed_pawn_blockade_table_endgame[rank];
+        }
         bmloop(P2BM(board, 6 * w + PAWN), square, temp) {
             // Encourage kings to come and protect these pawns
             int dist_from_wking = dist(square, wkingsquare);

@@ -24,11 +24,14 @@ typedef uint8_t side_t;
 void engine_init(int flags);
 int engine_reset_hashmap(int hashsize);
 
+extern int hashmapsize;
+
 
 #define ACE_PARAM_CONTEMPT 1
 #define ACE_PARAM_DEBUG 2
 int engine_set_param(int name, int value);
 
+void load_evaluation_params();
 
 void engine_new_game();
 void engine_clear_state();

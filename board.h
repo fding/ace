@@ -29,9 +29,8 @@
     for (square=LSBINDEX(board), temp=board; temp; temp&=(temp-1), square=LSBINDEX(temp))
 #define P2BM(board, piece) (*((*(board)->pieces)+(piece)))
 
-// TODO: this seems backwards!
-#define LEFT(x) ((x) << 1)
-#define RIGHT(x) ((x) >> 1)
+#define LEFT(x) ((x) >> 1)
+#define RIGHT(x) ((x) << 1)
 
 #define CHECKMATE 24000
 #define INFINITY 25000
@@ -189,6 +188,21 @@ union transposition {
         int16_t age; // Needs 9 bits
     } metadata;
 }; // Currently 128 bits
+/* TODO: investigate reducing to 64 bits
+union transposition {
+    move_t move; // Currently 64 bits, can reduce to 32
+    struct {
+        unsigned char square1 : 6;
+        unsigned char enpassant: 2;
+        unsigned char square2 : 6;
+        unsigned char promotion: 2;
+        int16_t score;
+        int16_t hash: 12;
+        char type: 3;
+        char age ;
+        char depth ;
+}; // Currently 128 bits
+ */
 
 struct ttable_entry {
     union transposition slot1;

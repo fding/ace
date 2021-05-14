@@ -32,7 +32,7 @@ int evaluation_cache_hits;
 
 int read_evaluation_cache(struct board* board, int* val) {
     int loc = board->hash & (EVALUATION_HASH_SIZE - 1);
-    int sig = board->hash >> 32;
+    uint32_t sig = board->hash >> 32;
     evaluation_cache_calls++;
     if (evaluation_hash[loc].hash == sig) {
         *val = evaluation_hash[loc].score;
@@ -44,9 +44,14 @@ int read_evaluation_cache(struct board* board, int* val) {
 
 void store_evaluation_cache(struct board* board, int val) {
     int loc = board->hash & (EVALUATION_HASH_SIZE - 1);
-    int sig = board->hash >> 32;
+    uint32_t sig = board->hash >> 32;
     evaluation_hash[loc].hash = sig;
     evaluation_hash[loc].score = val;
+}
+
+void clear_evaluation_cache(struct board* board) {
+    memset(evaluation_hash, 0, sizeof(evaluation_hash));
+    memset(pawn_hashmap, 0, sizeof(pawn_hashmap));
 }
 
 
@@ -78,13 +83,18 @@ int material_for_player(struct board* board, side_t who) {
     int nknights = popcnt(board->pieces[who][KNIGHT]);
     int nbishops = popcnt(board->pieces[who][BISHOP]);
     int nrooks = popcnt(board->pieces[who][ROOK]);
+    int nqueens = popcnt(board->pieces[who][QUEEN]);
+    /* TODO: Optimize this */
+    int nopposing = popcnt(board->pieces[1-who][KNIGHT]) + popcnt(board->pieces[1 - who][BISHOP]) + popcnt(board->pieces[1-who][ROOK]);
+
     int score = MIDGAME_PAWN_VALUE * npawns+
         MIDGAME_KNIGHT_VALUE * nknights +
         MIDGAME_BISHOP_VALUE * nbishops +
         MIDGAME_ROOK_VALUE * nrooks +
-        MIDGAME_QUEEN_VALUE * popcnt(board->pieces[who][QUEEN]);
+        MIDGAME_QUEEN_VALUE * nqueens;
     score += knight_material_adj_table[npawns] * nknights;
     score += rook_material_adj_table[npawns] * nrooks;
+    score += rook_material_adj_table[nopposing] * nqueens;
     score += (nbishops == 2) * MIDGAME_BISHOP_PAIR;
     score += (nrooks == 2) * MIDGAME_ROOK_PAIR;
     return score;
@@ -282,6 +292,15 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
         }
         // king_zone |= forward_king_zone;
 
+        bmloop(passed_pawn_blockade[1-w] & (minors[w] | majors[w] | kings[w]), square, temp) {
+            int rank;
+            if (w)
+                rank = square / 8;
+            else
+                rank = 7 - square / 8;
+            subscore += passed_pawn_blockade_table[rank];
+            SQPRINTF("  Sided passed pawn blockade for %c%c: %d\n", square, passed_pawn_blockade_table[rank]);
+        }
         bmloop(P2BM(board, 6 * w + KNIGHT), square, temp) {
             // Outposts are good
             if ((1ull << square) & outposts[w]) {
@@ -298,11 +317,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
                 king_attackers += 2 * popcnt(attack_mask & king_zone);
                 king_attackers_count += 1;
                 SQPRINTF("    Sided knight king attacker for %c%c: %d\n", square, 2);
-            }
-
-            if ((1ull << square) & passed_pawn_blockade[1-w]) {
-                subscore += 15;
-                SQPRINTF("  Sided knight passed pawn blockade for %c%c: %d\n", square, 15);
             }
 
             // Hanging piece penalty
@@ -322,8 +336,8 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
 #ifdef PINNED
             // Pinned pieces aren't great, especially knights
             if ((1ull << square) & mvs->pinned) {
-                subscore -= 12;
-                SQPRINTF("  Sided knight pinned penalty for %c%c: %d\n", square, -12);
+                subscore += PINNED_PENALTY;
+                SQPRINTF("  Sided knight pinned penalty for %c%c: %d\n", square, PINNED_PENALTY);
             }
 #endif
         }
@@ -337,17 +351,17 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
         int cf_pawn_block = popcnt(P2BM(board, 6 * w + KNIGHT) & (rank2_pawns & 0x0000000000240000ull));
         int de_pawn_block = popcnt(P2BM(board, 6 * w + KNIGHT) & (rank2_pawns & 0x0000000000180000ull));
         DPRINTF("Sided pawn blockage penalty for knights for side %d: %d\n",
-                w, cf_pawn_block * 5 + de_pawn_block * 10);
-        subscore -= (cf_pawn_block * 5 + de_pawn_block * 10);
+                w, cf_pawn_block * CFDE_PAWN_BLOCK + de_pawn_block * CFDE_PAWN_BLOCK * 2);
+        subscore -= (cf_pawn_block * CFDE_PAWN_BLOCK + de_pawn_block * CFDE_PAWN_BLOCK * 2);
 
         bmloop(P2BM(board, 6 * w + BISHOP), square, temp) {
             if ((1ull << square) & outposts[w]) {
                 SQPRINTF("  Sided bishop outpost for %c%c: %d\n", square, 14);
-                subscore += 12;
+                subscore += BISHOP_OUTPOST_BONUS;
             }
             else if ((1ull << square) & holes[w]) {
                 SQPRINTF("  Sided bishop outpost for %c%c: %d\n", square, 4);
-                subscore += 6;
+                subscore += BISHOP_ALMOST_OUTPOST_BONUS;
             }
             uint64_t attack_mask = attack_set_bishop(square, pieces[w], pieces[1 - w]);
             subscore += attack_count_table_bishop[popcnt(attack_mask & (~pawn_attacks[1-w]))];
@@ -360,11 +374,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
                 king_attackers += 1;
                 SQPRINTF("    Sided bishop king attacker for %c%c: %d\n", square, 1);
             } */
-
-            if ((1ull << square) & passed_pawn_blockade[1-w]) {
-                subscore += 15;
-                SQPRINTF("  Sided bishop passed pawn blockade for %c%c: %d\n", square, 15);
-            }
 
             // Hanging piece penalty
             if (!(attacks[w] & (1ull << square))) {
@@ -392,23 +401,19 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
             subscore += penalty;
             SQPRINTF("  Sided bishop obstruction penalty for %c%c: %d\n", square, penalty);
 #ifdef PINNED
+            /*
             if ((1ull << square) & mvs->pinned) {
                 SQPRINTF("  Sided bishop pinned for %c%c: %d\n", square, -10);
                 subscore -= 10;
             }
+            */
 #endif
         }
 
         bmloop(P2BM(board, 6 * w + ROOK), square, temp) {
             file = square & 0x7;
             rank = square / 8;
-            if ((w && rank == 1) || (!w && rank == 6)) {
-                // TODO: only do this if king is on rank 8
-                // or if there are pawns on rank 7
-                SQPRINTF("  Sided rook on seventh rank for %c%c: %d\n", square, 20);
-                subscore += 20;
-            }
-            if ((1ull << square) & outposts[w]) subscore += 15;
+            if ((1ull << square) & outposts[w]) subscore += ROOK_OUTPOST_BONUS;
             // Rooks on open files are great
             if (!file_occupied[file]) {
                 if (!((AFILE << file) & (pawns[0] | pawns[1]))) {
@@ -429,11 +434,11 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
                 int lineup_score = 0;
                 if (w) {
                     if (same_file_pawn < (1ull << square)) {
-                        lineup_score = 20;
+                        lineup_score = ROOK_TARASCH_BONUS;
                     }
                 } else {
                     if (same_file_pawn > (1ull << square)) {
-                        lineup_score = 20;
+                        lineup_score = ROOK_TARASCH_BONUS;
                     }
                 }
                 SQPRINTF("Rook behind pawn score for %c%c: %d\n", square, lineup_score);
@@ -442,8 +447,8 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
             file_occupied[file] = 1;
 
             uint64_t attack_mask = attack_set_rook(square, pieces[w], pieces[1 - w]);
-            subscore += attack_count_table[popcnt(attack_mask & (~pawn_attacks[1-w]))];
-            SQPRINTF("  Sided rook attack count for %c%c: %d\n", square, attack_count_table[popcnt(attack_mask & (~pawn_attacks[1-w]))]);
+            subscore += attack_count_table_rook[popcnt(attack_mask & (~pawn_attacks[1-w]))];
+            SQPRINTF("  Sided rook attack count for %c%c: %d\n", square, attack_count_table_rook[popcnt(attack_mask & (~pawn_attacks[1-w]))]);
             if (attack_mask & king_zone) {
                 SQPRINTF("    Sided rook king attacker for %c%c: %d\n", square, 3);
                 king_attackers += 3 * popcnt(attack_mask & king_zone);
@@ -472,10 +477,12 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
             }
 
 #ifdef PINNED
+            /*
             if ((1ull << square) & mvs->pinned) {
                 SQPRINTF("  Sided rook pinned penalty for %c%c: %d\n", square, -15);
                 subscore -= 15;
             }
+            */
 #endif
         }
 
@@ -495,8 +502,8 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
             file_occupied[file] = 1;
 
             uint64_t attack_mask = attack_set_queen(square, pieces[w], pieces[1 - w]);
-            subscore += attack_count_table[popcnt(attack_mask & (~pawn_attacks[1-w]))];
-            SQPRINTF("  Queen attack score for %c%c: %d\n", square, attack_count_table[popcnt(attack_mask & (~pawn_attacks[1-w]))] / 2);
+            subscore += attack_count_table_queen[popcnt(attack_mask & (~pawn_attacks[1-w]))];
+            SQPRINTF("  Queen attack score for %c%c: %d\n", square, attack_count_table_queen[popcnt(attack_mask & (~pawn_attacks[1-w]))] / 2);
             if (attack_mask & king_zone) {
                 SQPRINTF("    Queen king attack for %c%c: %d\n", square, 4);
                 king_attackers += 4 * popcnt(attack_mask & king_zone);
@@ -543,10 +550,6 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
 
         square = board->kingsq[w];
         file = square & 0x7;
-        if ((1ull << square) & passed_pawn_blockade[1-w]) {
-            subscore += 15;
-            SQPRINTF("  Sided king pawn blockade for %c%c: %d\n", square, 15);
-        }
         uint64_t xray_rook = xray_rook_attacks(square, pieces[0] | pieces[1], pieces[1-w]);
         uint64_t xray_bishop = xray_bishop_attacks(square, pieces[0] | pieces[1], pieces[1-w]);
 
@@ -573,27 +576,27 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
         int open_file_count = 0;
         int semiopen_file_count = 0;
 
-        if (pawns[w] & (AFILE << file)) {
+        if (!(pawns[w] & (AFILE << file))) {
             semiopen_file_count += 1;
-            if (pawns[1-w] & mask)
+            if (!(pawns[1-w] & (AFILE << file)))
                 open_file_count += 1;
         }
         
         if (file != 0) {
-            if (pawns[w] & (AFILE << (file - 1))) {
+            if (!(pawns[w] & (AFILE << (file - 1)))) {
                 semiopen_file_count += 1;
-                if (pawns[1-w] & mask)
+                if (!(pawns[1-w] & (AFILE << (file - 1))))
                     open_file_count += 1;
             }
         }
         if (file != 7) {
-            if (pawns[w] & (AFILE << (file + 1))) {
+            if (!(pawns[w] & (AFILE << (file + 1)))) {
                 semiopen_file_count += 1;
-                if (pawns[1-w] & mask)
+                if (!(pawns[1-w] & (AFILE << (file + 1))))
                     open_file_count += 1;
             }
         }
-        subscore -= (5 * semiopen_file_count + 10 * open_file_count);
+        subscore += (KING_SEMIOPEN_FILE_PENALTY * semiopen_file_count + KING_OPEN_FILE_PENALTY * open_file_count);
 
         if (file <= 3)
             mask = AFILE | (AFILE << 1) | (AFILE << 2);
@@ -651,8 +654,8 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
             queenside_obstacles = popcnt(
                     pieces[w] & (BFILE | CFILE | DFILE) & RANK1);
         }
-        subscore -= MIN(kingside_obstacles, queenside_obstacles) * 5;
-        DPRINTF("Castle obstruction for side %d: %d, %d (score=%d)\n", w, kingside_obstacles, queenside_obstacles, -MIN(kingside_obstacles, queenside_obstacles) * 5);
+        subscore += MIN(kingside_obstacles, queenside_obstacles) * CASTLE_OBSTRUCTION_PENALTY;
+        DPRINTF("Castle obstruction for side %d: %d, %d (score=%d)\n", w, kingside_obstacles, queenside_obstacles, MIN(kingside_obstacles, queenside_obstacles) * CASTLE_OBSTRUCTION_PENALTY);
 
         if (w) score -= subscore;
         else score += subscore;
@@ -673,9 +676,9 @@ static int board_score_mg_positional(struct board* board, unsigned char who, str
         DPRINTF("Space score: %d\n", space_table[space[1] - space[0]]);
     }
 
-    score += 8 * (1 - 2 * who);
-    score += ((board->cancastle & 12) != 0) * 8 - ((board->cancastle & 3) != 0 ) * 8;
-    DPRINTF("Can castle score: %d\n", ((board->cancastle & 12) != 0) * 8 - ((board->cancastle & 3) != 0 ) * 8);
+    score += TEMPO_BONUS * (1 - 2 * who);
+    score += ((board->cancastle & 12) != 0) * CAN_CASTLE_BONUS - ((board->cancastle & 3) != 0 ) * CAN_CASTLE_BONUS;
+    DPRINTF("Can castle score: %d\n", ((board->cancastle & 12) != 0) * CAN_CASTLE_BONUS - ((board->cancastle & 3) != 0 ) * CAN_CASTLE_BONUS);
     return score;
 }
 
