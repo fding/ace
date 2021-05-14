@@ -21,8 +21,8 @@ struct timer * new_timer(time_t wtime, time_t btime, time_t winc, time_t binc, i
         timer->max_time = MIN(2 * timer->time / movestogo, timer->time / MIN(2, movestogo));
         timer->increment = 1.1;
     } else {
-        timer->allotted_time = timer->time / 32;
-        timer->max_time = timer->time / 16;
+        timer->allotted_time = timer->time / 25;
+        timer->max_time = timer->time / 12;
         timer->increment = 1.1;
     }
     timer->infinite = 0;

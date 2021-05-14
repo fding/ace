@@ -375,17 +375,12 @@ static void sorted_move_iterator_init(struct sorted_move_iterator* move_iter, st
 
 
 /* Same thing, except that here, we only assume capture moves */
-static void sort_deltaset_qsearch(struct board* board, char who, struct deltaset* set, move_t * tablemove) {
+static void sort_deltaset_qsearch(struct board* board, char who, struct deltaset* set) {
     int i;
     int scores[256];
 
     for (i = 0; i < set->nmoves; i++) {
-        scores[i] = 0;
-        // Found in transposition table
-        if (tablemove->piece != -1 && move_equal(*tablemove, set->moves[i]))
-            scores[i] = 60000;
-        else
-            scores[i] = move_see(board, &set->moves[i]);
+        scores[i] = move_see(board, &set->moves[i]);
     }
 
     insertion_sort(set->moves, scores, 0, set->nmoves);
@@ -490,9 +485,6 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
         }
     }
 
-    move_t tablemove;
-    tablemove.piece = -1;
-
     int nmoves = 0;
     generate_qsearch_moves(&out, board);
 
@@ -504,39 +496,13 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
     // This gives us the option of not doing anything and accepting the board as is.
     // Score the node using the transposition table if posible,
     // and if not, using the static evaluation function
-    if (ttable_read(board->hash, &stored) == 0) {
-        score = transform_checkmate(board, stored);
-        if (!(stored->metadata.type & EXACT) && !((stored->metadata.type & ALPHA_CUTOFF) && score <= alpha) &&
-             !((stored->metadata.type & BETA_CUTOFF) && score >=beta)) {
-            if (nmoves == 0) {
-                generate_moves(&out1, board);
-                score = board_score(board, who, &out1, alpha, beta);
-            } else {
-                score = board_score(board, who, &out, alpha, beta);
-            }
-            if (who) score = -score;
-        }
-        if (stored->metadata.type & MOVESTORED) {
-            if (is_pseudo_valid_move(board, who, stored->move)) {
-                move_copy(&tablemove, &stored->move);
-            } else {
-                char buffer[8];
-                char board_buffer[128];
-                move_to_calgebraic(board, buffer, &stored->move);
-                board_to_fen(board, board_buffer);
-                fprintf(stderr, "enpassant: %llx, square2: %llx, eq: %d, piece: %d\n", board->enpassant, (1ull << stored->move.square2), board->enpassant == (1ull << stored->move.square2), stored->move.piece);
-                fprintf(stderr, "(1) Trying to apply invalid move (%s) on board: %s\n", buffer, board_buffer);
-            }
-        }
+    if (nmoves == 0) {
+        generate_moves(&out1, board);
+        score = board_score(board, who, &out1, alpha, beta);
     } else {
-        if (nmoves == 0) {
-            generate_moves(&out1, board);
-            score = board_score(board, who, &out1, alpha, beta);
-        } else {
-            score = board_score(board, who, &out, alpha, beta);
-        }
-        if (who) score = -score;
+        score = board_score(board, who, &out, alpha, beta);
     }
+    if (who) score = -score;
     int initial_score = score;
 
     // Terminal condition: no more moves are left, or we run out of depth
@@ -558,7 +524,7 @@ int qsearch(struct board* board, struct timer* timer, int depth, int alpha, int 
         return initial_score + 950;
     }
 
-    sort_deltaset_qsearch(board, who, &out, &tablemove);
+    // sort_deltaset_qsearch(board, who, &out);
 
     int value = 0;
     int delta_cutoff = 200;
@@ -642,7 +608,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
 
     // Detect cycles, which result in a drawn position
     int min_plies = MAX(0, ply - 2 * board->nmovesnocapture - 1);
-    for (i = ply - 4; i >= min_plies; i--) {
+    for (i = ply - 4; i >= min_plies; i -= 2) {
         if (board->hash == seen[i]) {
             short_circuit_count++;
             return 0;
@@ -688,14 +654,9 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
     if (extensions > 0 && !nullmode) {
         if (out.check) {
             if (prev) {
-                reverse_move(board, prev);
-                int see = move_see(board, prev);
-                apply_move(board, prev);
-                if (see >= 0) {
-                    depth += ONE_PLY;
-                    extensions -= ONE_PLY;
-                    extended = 1;
-                }
+                depth += ONE_PLY;
+                extensions -= ONE_PLY;
+                extended = 1;
             }
         }
         if (nmoves <= 2) {
