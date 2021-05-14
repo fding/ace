@@ -403,6 +403,7 @@ static int ttable_search(struct board* restrict board, int who, int depth, move_
                          int* restrict alpha, int beta) {
     union transposition * stored;
     int score;
+    int ret = -1;
     move->piece = -1;
     // TODO: do we need ply > 1?
     if (ttable_read(board->hash, &stored) == 0 && position_count_table_read(board->hash) < 1) {
@@ -419,25 +420,26 @@ static int ttable_search(struct board* restrict board, int who, int depth, move_
                     move_to_calgebraic(board, buffer, &stored->move);
                     board_to_fen(board, board_buffer);
                     fprintf(stderr, "(0) Trying to apply invalid move (%s) on board: %s\n", buffer, board_buffer);
+                    return -2;
                 }
             } 
             // The stored score is only an upper bound,
             // so we can only terminate if score is less than the current lower bound
             if ((stored->metadata.type & ALPHA_CUTOFF) && score <= *alpha) {
                 *alpha = score;
-                return 0;
+                ret = 0;
             }
             // The stored score is only an lower bound,
             // so we can only terminate if score is greater than the current upper bound
             if ((stored->metadata.type & BETA_CUTOFF) && score >= beta) {
                 *alpha = score;
-                return 0;
+                ret = 0;
             }
         } 
         if (stored->metadata.type & MOVESTORED) {
             if (is_pseudo_valid_move(board, who, stored->move)) {
                 move_copy(move, &stored->move);
-                return 1;
+                return ret;
             } else {
                 char buffer[8];
                 char board_buffer[128];
@@ -445,10 +447,11 @@ static int ttable_search(struct board* restrict board, int who, int depth, move_
                 board_to_fen(board, board_buffer);
                 fprintf(stderr, "enpassant: %llx, square2: %llx, eq: %d, piece: %d\n", board->enpassant, (1ull << stored->move.square2), board->enpassant == (1ull << stored->move.square2), stored->move.piece);
                 fprintf(stderr, "(1) Trying to apply invalid move (%s) on board: %s\n", buffer, board_buffer);
+                return -2;
             }
         }
     }
-    return -1;
+    return ret;
 }
 
 /* Quiescent search: a modified search routine that only considers captures.
@@ -634,6 +637,8 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         ply--;
         short_circuit_count++;
         return alpha;
+    } else {
+        alpha = orig_alpha;
     }
 
     // Check if we are out of time. If so, abort
@@ -643,7 +648,7 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         if (!timer_continue(timer) || signal_stop) {
             out_of_time = 1;
             ply--;
-            return 0;
+            return alpha;
         }
     }
 
@@ -801,9 +806,6 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             }
         }
         reverse_move(board, move);
-        if (out_of_time) {
-            return alpha;
-        }
         if (alpha < score) {
             alpha = score;
             move_copy(best, move);
@@ -819,15 +821,16 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
             type = BETA_CUTOFF | MOVESTORED;
             break;
         }
+        if (out_of_time) {
+            ply--;
+            return alpha;
+        }
     }
 
     ply--;
-    if (out_of_time) return alpha;
-
-    transposition.metadata.type = type;
-    transposition.metadata.age = board->nmoves;
-    transposition.metadata.score = alpha;
-    transposition.metadata.depth = depth / ONE_PLY;
+    if (out_of_time) {
+        return alpha;
+    }
 
     if (best->piece != -1) {
         if (!move_equal(*best, transposition.move)) {
@@ -837,8 +840,13 @@ int search(struct board* board, struct timer* timer, move_t* restrict best, move
         }
     }
 
-    if (!nullmode)
-      ttable_update(board->hash, &transposition);
+    if (!nullmode) {
+        transposition.metadata.type = type;
+        transposition.metadata.age = board->nmoves;
+        transposition.metadata.score = alpha;
+        transposition.metadata.depth = depth / ONE_PLY;
+        ttable_update(board->hash, &transposition);
+    }
     return alpha;
 }
 

@@ -183,7 +183,7 @@ union transposition {
         int16_t score;
         // 8 byte alignment
         uint32_t hash; // 12 bits??
-        char type; // Needs 3 bits
+        char type; // Needs 4 bits
         uint8_t depth; // Needs 8 bits
         int16_t age; // Needs 9 bits
     } metadata;

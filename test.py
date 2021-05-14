@@ -1464,7 +1464,7 @@ POSITIONAL_BADEXCHANGES = ('Positional (Avoid pointless exchanges)', [
 
 FNULL = open(os.devnull, 'w')
 
-for tname, tcases in [ # TACTICS, POSITIONAL_UNDERMINING,
+for tname, tcases in [ TACTICS, POSITIONAL_UNDERMINING,
                       # POSITIONAL_OPEN,
                      # POSITIONAL_OUTPOSTS, POSITIONAL_SQUARE,
                      # POSITIONAL_BISHOP_VS_KNIGHT, POSITIONAL_RECAPTURE, POSITIONAL_SIMPLIFICATION,
